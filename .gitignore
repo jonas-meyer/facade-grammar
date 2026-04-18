@@ -1,3 +1,10 @@
+# Project data (cache, downloads, debug artifacts, outputs)
+data/
+
+# osmnx default on-disk cache (we use Hamilton's cache instead, but osmnx
+# creates this directory on import before our opt-out runs)
+cache/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

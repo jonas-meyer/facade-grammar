@@ -1,4 +1,4 @@
-test_area:
+area:
   min_lon: 4.883
   min_lat: 52.366
   max_lon: 4.895

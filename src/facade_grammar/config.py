@@ -2,13 +2,14 @@
 
 ``AppConfig()`` layers sources in decreasing precedence: init kwargs → env
 vars (``FG_`` prefix, nested via double-underscore, e.g.
-``FG_TEST_AREA__MIN_LON=4.88``) → ``.env`` file → YAML at
+``FG_AREA__MIN_LON=4.88``) → ``.env`` file → YAML at
 ``config/default.yaml`` → model defaults.
 """
 
 from pathlib import Path
+from typing import NamedTuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -17,8 +18,8 @@ from pydantic_settings import (
 )
 
 
-class BboxConfig(BaseModel):
-    """Geographic bounding box in WGS84 degrees."""
+class Bbox(NamedTuple):
+    """WGS84 bounding box. NamedTuple so Hamilton's input type-check can isinstance-validate it."""
 
     min_lon: float
     min_lat: float
@@ -45,8 +46,9 @@ class AppConfig(BaseSettings):
         extra="ignore",
     )
 
-    test_area: BboxConfig
+    area: Bbox
     cache: CacheConfig = Field(default_factory=CacheConfig)
+    mapillary_token: SecretStr
 
     @classmethod
     def settings_customise_sources(
