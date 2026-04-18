@@ -17,8 +17,10 @@ Set `FG_MAPILLARY_TOKEN` in `.env`. Get one at
 ## Run
 
 ```sh
-uv run python scripts/run.py
+uv run facade-grammar              # warm run, uses on-disk cache
+uv run facade-grammar --no-cache   # force a cold run
 ```
 
-Writes `data/debug/area_map.png`: buildings, streets, canals, and photo
-locations overlaid for the bbox in `config/default.yaml`.
+Writes two PNGs under `data/debug/`: `area_map.png` (buildings, streets,
+canals, and all photo locations overlaid) and `canal_selection_map.png`
+(canal facades with the selected Mapillary photo per building).

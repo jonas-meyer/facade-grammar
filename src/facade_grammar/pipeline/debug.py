@@ -5,9 +5,9 @@ from pathlib import Path
 import polars as pl
 from hamilton.function_modifiers import cache, tag
 
-from facade_grammar.schemas.buildings import Building
+from facade_grammar.schemas.buildings import Building, Facade
 from facade_grammar.schemas.photos import PhotoMetadata
-from facade_grammar.viz.plots import plot_area_map
+from facade_grammar.viz.plots import plot_area_map, plot_canal_selection
 
 
 @cache(behavior="recompute")
@@ -24,4 +24,24 @@ def area_map(
         waterways=raw_waterways,
         photos=raw_photo_metadata,
         out_path=Path("data/debug/area_map.png"),
+    )
+
+
+@cache(behavior="recompute")
+@tag(stage="debug")
+def canal_selection_map(
+    raw_buildings: list[Building],
+    raw_streets: pl.DataFrame,
+    raw_waterways: pl.DataFrame,
+    canal_facades: list[Facade],
+    top_photos_per_facade: dict[str, list[PhotoMetadata]],
+) -> Path:
+    best = {bid: photos[0] for bid, photos in top_photos_per_facade.items()}
+    return plot_canal_selection(
+        buildings=raw_buildings,
+        streets=raw_streets,
+        waterways=raw_waterways,
+        canal_facades=canal_facades,
+        best_photo_per_facade=best,
+        out_path=Path("data/debug/canal_selection_map.png"),
     )

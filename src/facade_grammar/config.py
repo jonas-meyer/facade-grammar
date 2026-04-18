@@ -30,8 +30,78 @@ class Bbox(NamedTuple):
 class CacheConfig(BaseModel):
     """Hamilton cache-related settings."""
 
-    output_dir: Path = Path("data/outputs")
-    recompute_nodes: list[str] = Field(default_factory=list)
+    cache_dir: Path = Field(
+        default=Path("data/.hamilton_cache"),
+        description="On-disk location of Hamilton's cache stores.",
+    )
+    output_dir: Path = Field(
+        default=Path("data/outputs"),
+        description="Where final artifacts (grammar JSON, features CSV) are written.",
+    )
+    recompute_nodes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Extra node names forced to RECOMPUTE alongside the decorator-level cache policy."
+        ),
+    )
+
+
+class IngestionConfig(BaseModel):
+    """Settings for the raw_* dataloader nodes."""
+
+    photo_fetch_buffer_m: float = Field(
+        default=50.0,
+        description=(
+            "Expand the Mapillary bbox outward by this many metres so edge buildings "
+            "find photos captured just outside the area. 3D BAG and OSM already "
+            "overfetch (Overpass returns whole ways), so only Mapillary needs it."
+        ),
+    )
+
+
+class SpatialConfig(BaseModel):
+    """Thresholds for edge classification in ``pipeline.spatial``."""
+
+    canal_near_m: float = Field(
+        default=15.0,
+        description="Max distance (m) from edge midpoint to waterway for canal classification.",
+    )
+    street_near_m: float = Field(
+        default=10.0,
+        description="Max distance (m) from an edge midpoint to a street for street classification.",
+    )
+    forward_cos_min: float = Field(
+        default=0.5,
+        description=(
+            "Outward normal must point within this cosine of the nearest feature "
+            "(cos 60deg = 0.5) for an edge to classify. Blocks side walls of narrow "
+            "canal houses from inheriting their neighbour's canal proximity."
+        ),
+    )
+
+
+class SelectionConfig(BaseModel):
+    """Thresholds for photo selection in ``pipeline.selection``."""
+
+    photo_min_dist_m: float = Field(
+        default=3.0,
+        description="Reject photos closer than this to the facade line (noise / lens distortion).",
+    )
+    photo_max_dist_m: float = Field(
+        default=60.0,
+        description="Reject photos farther than this to the facade line.",
+    )
+    bearing_tol_deg: float = Field(
+        default=35.0,
+        description="Photo bearing must be within this many degrees of (facade-normal + 180).",
+    )
+    top_k: int = Field(
+        default=3,
+        description=(
+            "Candidates carried per facade. Across-canal photos sort ahead of same-side; "
+            "downstream (SAM tree-occlusion filtering, etc.) picks among them."
+        ),
+    )
 
 
 class AppConfig(BaseSettings):
@@ -48,6 +118,9 @@ class AppConfig(BaseSettings):
 
     area: Bbox
     cache: CacheConfig = Field(default_factory=CacheConfig)
+    ingestion: IngestionConfig = Field(default_factory=IngestionConfig)
+    spatial: SpatialConfig = Field(default_factory=SpatialConfig)
+    selection: SelectionConfig = Field(default_factory=SelectionConfig)
     mapillary_token: SecretStr
 
     @classmethod

@@ -7,17 +7,14 @@ import httpx
 import shapely
 import shapely.geometry
 from pydantic import AliasPath, BaseModel, ConfigDict, Field
-from pyproj import Transformer
 
 from facade_grammar.config import Bbox
+from facade_grammar.geo import RD_TO_WGS84, WGS84_TO_RD
 from facade_grammar.schemas.buildings import Building
 
 WFS_URL = "https://data.3dbag.nl/api/BAG3D/wfs"
 _TYPE_NAME = "BAG3D:lod12"
 _PAGE_SIZE = 1000
-
-_WGS84_TO_RD = Transformer.from_crs(4326, 28992, always_xy=True)
-_RD_TO_WGS84 = Transformer.from_crs(28992, 4326, always_xy=True)
 
 
 class _BagBuilding(BaseModel):
@@ -33,7 +30,7 @@ class _BagBuilding(BaseModel):
     def to_building(self) -> Building:
         polygon = shapely.get_parts(shapely.geometry.shape(self.geometry))[0]
         ring = list(polygon.exterior.coords)
-        lons, lats = _RD_TO_WGS84.transform([p[0] for p in ring], [p[1] for p in ring])
+        lons, lats = RD_TO_WGS84.transform([p[0] for p in ring], [p[1] for p in ring])
         return Building(
             building_id=self.identificatie,
             footprint=list(zip(lons, lats, strict=True)),
@@ -42,7 +39,7 @@ class _BagBuilding(BaseModel):
 
 
 def fetch_buildings(bbox_wgs84: Bbox) -> list[Building]:
-    min_x, min_y, max_x, max_y = _WGS84_TO_RD.transform_bounds(*bbox_wgs84)
+    min_x, min_y, max_x, max_y = WGS84_TO_RD.transform_bounds(*bbox_wgs84)
     rd_bbox = f"{min_x},{min_y},{max_x},{max_y},EPSG:28992"
 
     with httpx.Client(timeout=60.0) as client:
