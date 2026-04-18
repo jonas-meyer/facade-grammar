@@ -1,5 +1,6 @@
 """Building and facade record types."""
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -13,6 +14,7 @@ class Building(BaseModel):
     building_id: str
     footprint: list[tuple[float, float]]
     height_m: float = Field(ge=0)
+    ground_altitude_m: float
 
 
 class Facade(BaseModel):
@@ -36,3 +38,16 @@ class Facade(BaseModel):
             (self.edge_start[0] + self.edge_end[0]) / 2,
             (self.edge_start[1] + self.edge_end[1]) / 2,
         )
+
+
+class FacadeMask(BaseModel):
+    """SAM 3 segmentation result attached to the chosen photo for a canal facade."""
+
+    building_id: str
+    photo_id: str
+    view_path: Path
+    mask_path: Path
+    occluder_mask_path: Path
+    facade_score: float = Field(ge=0, le=1)
+    occluder_ratio: float = Field(ge=0)
+    projected_bbox: tuple[int, int, int, int] | None = None

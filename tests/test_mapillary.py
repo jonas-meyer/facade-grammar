@@ -44,6 +44,18 @@ def test_null_compass_maps_to_none() -> None:
     assert photo.bearing_deg is None
 
 
+def test_pano_flag_round_trips() -> None:
+    photo = _MapillaryPhoto.model_validate(_item(is_pano=True)).to_photo_metadata()
+    assert photo is not None
+    assert photo.is_pano is True
+
+
+def test_perspective_photo_has_is_pano_false() -> None:
+    photo = _MapillaryPhoto.model_validate(_item(is_pano=False)).to_photo_metadata()
+    assert photo is not None
+    assert photo.is_pano is False
+
+
 def test_tile_bbox_produces_grid_squared_tiles() -> None:
     tiles = list(_tile_bbox(Bbox(0.0, 0.0, 4.0, 8.0), grid=2))
     assert len(tiles) == 4

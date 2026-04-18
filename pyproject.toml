@@ -16,6 +16,8 @@ dependencies = [
     "matplotlib>=3.10,<4",
     "pyproj>=3.7,<4",
     "typer>=0.24,<0.25",
+    "numpy>=2.2,<3",
+    "pillow>=11.0,<12",
 ]
 
 [project.scripts]
@@ -34,6 +36,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/facade_grammar"]
+
+[tool.uv.workspace]
+members = ["services/*"]
 
 [tool.ruff]
 src = ["src", "scripts", "tests"]
@@ -58,6 +63,9 @@ select = [
 root = ["./src"]
 python-version = "3.14"
 python = "./.venv"
+
+[tool.ty.src]
+exclude = ["services/**"]  # sam-service has its own venv / type-check pass
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

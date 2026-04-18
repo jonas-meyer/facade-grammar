@@ -4,6 +4,7 @@
 module works in headless environments.
 """
 
+import random
 from pathlib import Path
 
 import matplotlib
@@ -11,16 +12,20 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+import numpy as np
 import polars as pl
 import shapely
 from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection, PolyCollection
-from pyproj import Geod
+from PIL import Image
 
-from facade_grammar.schemas.buildings import Building, Facade
+from facade_grammar.geo import WGS84_GEOD
+from facade_grammar.schemas.buildings import Building, Facade, FacadeMask
 from facade_grammar.schemas.photos import PhotoMetadata
 
-_GEOD = Geod(ellps="WGS84")
+_CONTACT_SHEET_ROWS = 4
+_CONTACT_SHEET_COLS = 3
+_CONTACT_SHEET_SEED = 42
 
 
 def plot_area_map(
@@ -86,6 +91,63 @@ def plot_canal_selection(
     return out_path
 
 
+def plot_facade_mask_contact_sheet(
+    *,
+    facade_masks: dict[str, FacadeMask],
+    out_path: Path,
+) -> Path:
+    """Grid of selected facades with SAM masks + projected bbox for eyeball QA."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    n_cells = _CONTACT_SHEET_ROWS * _CONTACT_SHEET_COLS
+    rng = random.Random(_CONTACT_SHEET_SEED)
+    sample = rng.sample(list(facade_masks.values()), min(n_cells, len(facade_masks)))
+
+    fig, axes = plt.subplots(
+        _CONTACT_SHEET_ROWS, _CONTACT_SHEET_COLS, figsize=(12, 14)
+    )
+    for ax in axes.flat:
+        ax.axis("off")
+
+    scores: list[float] = []
+    ratios: list[float] = []
+    for ax, fm in zip(axes.flat, sample, strict=False):
+        image = Image.open(fm.view_path).convert("RGB")
+        ax.imshow(np.asarray(image))
+        facade = _load_mask(fm.mask_path)
+        occluder = _load_mask(fm.occluder_mask_path)
+        if facade.any():
+            ax.contour(facade, levels=[0.5], colors="#2ca02c", linewidths=1.4)
+        if occluder.any():
+            ax.contour(occluder, levels=[0.5], colors="#e63946", linewidths=0.9)
+        if fm.projected_bbox is not None:
+            x0, y0, x1, y1 = fm.projected_bbox
+            ax.plot(
+                [x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0],
+                color="#00bcd4", linewidth=1.0, linestyle="--",
+            )
+        ax.set_title(
+            f"{fm.building_id[:10]}  s={fm.facade_score:.2f}  occ={fm.occluder_ratio:.0%}",
+            fontsize=8,
+        )
+        scores.append(fm.facade_score)
+        ratios.append(fm.occluder_ratio)
+
+    mean_s = sum(scores) / len(scores) if scores else 0.0
+    mean_r = sum(ratios) / len(ratios) if ratios else 0.0
+    fig.suptitle(
+        f"{len(facade_masks)} facades masked — mean score {mean_s:.2f}, "
+        f"mean occluder coverage {mean_r:.0%}",
+        fontsize=11,
+    )
+    fig.savefig(out_path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    return out_path
+
+
+def _load_mask(path: Path) -> np.ndarray:
+    return np.asarray(Image.open(path), dtype=bool)
+
+
 def _draw_buildings(ax: Axes, buildings: list[Building]) -> None:
     verts = [b.footprint for b in buildings if len(b.footprint) >= 3]
     if not verts:
@@ -136,7 +198,7 @@ def _draw_canal_facades(ax: Axes, facades: list[Facade]) -> None:
 
 def _draw_normal_ticks(ax: Axes, facades: list[Facade], *, distance_m: float) -> None:
     segments = [
-        [f.midpoint, _GEOD.fwd(*f.midpoint, f.normal_deg, distance_m)[:2]]
+        [f.midpoint, WGS84_GEOD.fwd(*f.midpoint, f.normal_deg, distance_m)[:2]]
         for f in facades
     ]
     if segments:
@@ -187,7 +249,7 @@ def _draw_selections(
             )
         )
         arrow_segments = [
-            [(p.lon, p.lat), _GEOD.fwd(p.lon, p.lat, p.bearing_deg, arrow_m)[:2]]
+            [(p.lon, p.lat), WGS84_GEOD.fwd(p.lon, p.lat, p.bearing_deg, arrow_m)[:2]]
             for _, p in matched
             if p.bearing_deg is not None
         ]

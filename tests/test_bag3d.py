@@ -14,7 +14,7 @@ _RD_RING = [
 def _feature(**prop_overrides: float | str) -> dict[str, object]:
     props: dict[str, float | str] = {
         "identificatie": "NL.IMBAG.Pand.0363100000000001",
-        "b3_h_70p": 14.5,
+        "b3_h_max": 14.5,
         "b3_h_maaiveld": -0.5,
     }
     props.update(prop_overrides)
@@ -28,6 +28,7 @@ def test_polygon_feature_to_building() -> None:
     building = _BagBuilding.model_validate(_feature()).to_building()
     assert building.building_id == "NL.IMBAG.Pand.0363100000000001"
     assert building.height_m == 15.0  # 14.5 minus -0.5
+    assert building.ground_altitude_m == -0.5
     assert len(building.footprint) == len(_RD_RING)
     # Amsterdam-area RD coords reproject to ~(4.88 E, 52.37 N) in WGS84.
     lon0, lat0 = building.footprint[0]
@@ -52,6 +53,6 @@ def test_multipolygon_takes_first_ring() -> None:
 
 def test_height_computed_from_bag_fields() -> None:
     building = _BagBuilding.model_validate(
-        _feature(b3_h_70p=20.25, b3_h_maaiveld=1.25)
+        _feature(b3_h_max=20.25, b3_h_maaiveld=1.25)
     ).to_building()
     assert building.height_m == 19.0

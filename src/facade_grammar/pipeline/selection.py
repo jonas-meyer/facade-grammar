@@ -113,8 +113,6 @@ def _passes_hard_filters(
     normal_deg: float,
     selection: SelectionConfig,
 ) -> bool:
-    if photo.bearing_deg is None:
-        return False
     px, py = photo_rd
     mx, my = midpoint
     if abs(px - mx) > selection.photo_max_dist_m or abs(py - my) > selection.photo_max_dist_m:
@@ -125,6 +123,11 @@ def _passes_hard_filters(
     # outside-of-facade: photo must be on the outward half-plane
     if (px - mx) * normal[0] + (py - my) * normal[1] <= 0:
         return False
-    # bearing alignment: the photo should look back toward the facade
+    # Panoramas see 360 degrees; we'll reproject toward the facade at vision-time.
+    if photo.is_pano:
+        return True
+    if photo.bearing_deg is None:
+        return False
+    # bearing alignment: the perspective photo should look back toward the facade
     delta = ((photo.bearing_deg - (normal_deg + 180)) + 540) % 360 - 180
     return abs(delta) <= selection.bearing_tol_deg

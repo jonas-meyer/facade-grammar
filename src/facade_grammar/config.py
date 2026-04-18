@@ -7,9 +7,9 @@ vars (``FG_`` prefix, nested via double-underscore, e.g.
 """
 
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, HttpUrl, SecretStr
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -80,6 +80,70 @@ class SpatialConfig(BaseModel):
     )
 
 
+class SamConfig(BaseModel):
+    """SAM 3 inference service settings and per-facade selection tunables."""
+
+    service_url: HttpUrl = Field(
+        default=HttpUrl("http://127.0.0.1:8000"),
+        description="Base URL of the running sam-service (LitServe).",
+    )
+    facade_prompt: str = Field(
+        default="building",
+        description="SAM 3 phrase prompt for the target structure.",
+    )
+    occluder_prompts: list[str] = Field(
+        default_factory=lambda: ["tree", "car"],
+        description=(
+            "Phrase prompts for things that occlude a canal facade from across-canal views. "
+            "Masks are unioned before the bbox-occlusion metric is computed."
+        ),
+    )
+    min_facade_score: float = Field(
+        default=0.3,
+        description="Reject a photo if SAM's top facade instance scores below this.",
+    )
+    http_timeout_s: float = Field(
+        default=600.0,
+        description=(
+            "Per-request timeout to sam-service. fp32 MPS inference is slow and queues "
+            "serialize on a single GPU; see reference_mps_sam3_fp32 memory for why fp32 "
+            "is unavoidable on Apple Silicon."
+        ),
+    )
+    mapillary_image_timeout_s: float = Field(
+        default=60.0,
+        description="Per-request timeout when downloading Mapillary thumb bytes.",
+    )
+    mask_dir: Path = Field(
+        default=Path("data/masks"),
+        description="On-disk location for selected facade + tree masks.",
+    )
+    pano_thumb_field: Literal["thumb_1024_url", "thumb_2048_url", "thumb_original_url"] = Field(
+        default="thumb_2048_url",
+        description="Mapillary Graph API thumb field fetched per-pano at SAM time.",
+    )
+    pano_view_size: tuple[int, int] = Field(
+        default=(1280, 960),
+        description="(W, H) pixels of the rectilinear view fed to SAM.",
+    )
+    pano_view_fov_deg: float = Field(
+        default=90.0,
+        description="Horizontal field of view of the reprojected pano view.",
+    )
+    bbox_margin_frac: float = Field(
+        default=0.08,
+        description="Safety margin expanding the projected footprint bbox on each side.",
+    )
+    max_concurrency: int = Field(
+        default=2,
+        description="Parallel in-flight HTTP calls to sam-service.",
+    )
+    max_buildings: int | None = Field(
+        default=None,
+        description="Cap on canal-front buildings segmented per run (dev aid; None = all).",
+    )
+
+
 class SelectionConfig(BaseModel):
     """Thresholds for photo selection in ``pipeline.selection``."""
 
@@ -121,6 +185,7 @@ class AppConfig(BaseSettings):
     ingestion: IngestionConfig = Field(default_factory=IngestionConfig)
     spatial: SpatialConfig = Field(default_factory=SpatialConfig)
     selection: SelectionConfig = Field(default_factory=SelectionConfig)
+    sam: SamConfig = Field(default_factory=SamConfig)
     mapillary_token: SecretStr
 
     @classmethod

@@ -5,9 +5,13 @@ from pathlib import Path
 import polars as pl
 from hamilton.function_modifiers import cache, tag
 
-from facade_grammar.schemas.buildings import Building, Facade
+from facade_grammar.schemas.buildings import Building, Facade, FacadeMask
 from facade_grammar.schemas.photos import PhotoMetadata
-from facade_grammar.viz.plots import plot_area_map, plot_canal_selection
+from facade_grammar.viz.plots import (
+    plot_area_map,
+    plot_canal_selection,
+    plot_facade_mask_contact_sheet,
+)
 
 
 @cache(behavior="recompute")
@@ -44,4 +48,13 @@ def canal_selection_map(
         canal_facades=canal_facades,
         best_photo_per_facade=best,
         out_path=Path("data/debug/canal_selection_map.png"),
+    )
+
+
+@cache(behavior="recompute")
+@tag(stage="debug")
+def facade_mask_contact_sheet(facade_masks: dict[str, FacadeMask]) -> Path:
+    return plot_facade_mask_contact_sheet(
+        facade_masks=facade_masks,
+        out_path=Path("data/debug/facade_mask_contact_sheet.png"),
     )

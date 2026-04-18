@@ -17,7 +17,8 @@ from facade_grammar.config import Bbox
 from facade_grammar.schemas.photos import PhotoMetadata
 
 GRAPH_URL = "https://graph.mapillary.com/images"
-_FIELDS = "id,computed_geometry,compass_angle,captured_at,thumb_1024_url"
+_IMAGE_URL = "https://graph.mapillary.com/{image_id}"
+_FIELDS = "id,computed_geometry,computed_altitude,compass_angle,captured_at,is_pano,thumb_1024_url"
 _TILE_GRID = 4
 _RECURSIVE_SPLIT_MAX_DEPTH = 2
 
@@ -37,7 +38,9 @@ class _MapillaryPhoto(BaseModel):
         validation_alias=AliasPath("computed_geometry", "coordinates", 1),
     )
     compass_angle: float | None = None
+    computed_altitude: float | None = None
     captured_at: int  # milliseconds since the epoch
+    is_pano: bool = False
     thumb_1024_url: HttpUrl
 
     def to_photo_metadata(self) -> PhotoMetadata | None:
@@ -53,9 +56,42 @@ class _MapillaryPhoto(BaseModel):
             lon=self.lon,
             lat=self.lat,
             bearing_deg=bearing,
+            altitude_m=self.computed_altitude,
             captured_at=datetime.fromtimestamp(self.captured_at / 1000, tz=UTC),
+            is_pano=self.is_pano,
             url=self.thumb_1024_url,
         )
+
+
+def fetch_image_bytes(url: HttpUrl | str, *, timeout_s: float = 60.0) -> bytes:
+    """Download a Mapillary thumb by its signed URL; no OAuth header needed."""
+    with httpx.Client(timeout=timeout_s) as client:
+        resp = client.get(str(url))
+        resp.raise_for_status()
+        return resp.content
+
+
+def fetch_thumb_url(
+    photo_id: str,
+    *,
+    field: str,
+    token: SecretStr,
+    timeout_s: float = 30.0,
+) -> str:
+    """Fetch a larger thumb URL for one image (e.g. ``thumb_2048_url``).
+
+    The bbox query can't include these heavy fields without tipping Mapillary's
+    opaque data cap, so we request them per-image at SAM time only for the
+    photos we actually segment.
+    """
+    with httpx.Client(timeout=timeout_s) as client:
+        resp = client.get(
+            _IMAGE_URL.format(image_id=photo_id),
+            params={"fields": field},
+            headers={"Authorization": f"OAuth {token.get_secret_value()}"},
+        )
+        resp.raise_for_status()
+        return resp.json()[field]
 
 
 def fetch_photo_metadata(

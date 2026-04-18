@@ -13,6 +13,7 @@ from typing import Annotated, Any
 import typer
 from hamilton import driver
 from hamilton.caching.fingerprinting import hash_repr, hash_value
+from hamilton.execution.executors import MultiThreadingExecutor, SynchronousLocalTaskExecutor
 from hamilton.plugins import h_rich
 
 from facade_grammar.config import AppConfig
@@ -65,22 +66,27 @@ def main(
             # @datasaver — which ``default_behavior="recompute"`` alone does not.
             recompute=True if no_cache else cfg.cache.recompute_nodes,
         )
+        .enable_dynamic_execution(allow_experimental_mode=True)
+        .with_local_executor(SynchronousLocalTaskExecutor())
+        .with_remote_executor(MultiThreadingExecutor(max_tasks=cfg.sam.max_concurrency))
         .with_adapters(h_rich.RichProgressBar(run_desc="facade-grammar"))
         .build()
     )
 
     result = dr.execute(
-        final_vars=["area_map", "canal_selection_map"],
+        final_vars=["area_map", "canal_selection_map", "facade_mask_contact_sheet"],
         inputs={
             "area_bbox": cfg.area,
             "mapillary_token": cfg.mapillary_token,
             "ingestion": cfg.ingestion,
             "spatial": cfg.spatial,
             "selection": cfg.selection,
+            "sam": cfg.sam,
         },
     )
     typer.echo(f"area_map: {result['area_map']}")
     typer.echo(f"canal_selection_map: {result['canal_selection_map']}")
+    typer.echo(f"facade_mask_contact_sheet: {result['facade_mask_contact_sheet']}")
 
 
 def cli() -> None:

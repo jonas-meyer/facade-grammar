@@ -24,7 +24,7 @@ class _BagBuilding(BaseModel):
 
     geometry: dict[str, Any]
     identificatie: str = Field(validation_alias=AliasPath("properties", "identificatie"))
-    b3_h_70p: float = Field(validation_alias=AliasPath("properties", "b3_h_70p"))
+    b3_h_max: float = Field(validation_alias=AliasPath("properties", "b3_h_max"))
     b3_h_maaiveld: float = Field(validation_alias=AliasPath("properties", "b3_h_maaiveld"))
 
     def to_building(self) -> Building:
@@ -34,7 +34,8 @@ class _BagBuilding(BaseModel):
         return Building(
             building_id=self.identificatie,
             footprint=list(zip(lons, lats, strict=True)),
-            height_m=self.b3_h_70p - self.b3_h_maaiveld,
+            height_m=self.b3_h_max - self.b3_h_maaiveld,
+            ground_altitude_m=self.b3_h_maaiveld,
         )
 
 

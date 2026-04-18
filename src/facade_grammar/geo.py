@@ -4,11 +4,12 @@ from collections.abc import Iterable
 
 import shapely
 import shapely.ops
-from pyproj import Transformer
+from pyproj import Geod, Transformer
 from shapely.geometry.base import BaseGeometry
 
 WGS84_TO_RD = Transformer.from_crs(4326, 28992, always_xy=True)
 RD_TO_WGS84 = Transformer.from_crs(28992, 4326, always_xy=True)
+WGS84_GEOD = Geod(ellps="WGS84")
 
 
 def build_rd_geoms(wkts: Iterable[str]) -> list[BaseGeometry]:
