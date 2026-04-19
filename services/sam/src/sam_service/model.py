@@ -61,7 +61,12 @@ class SamBackend:
             }
             if boxes is not None:
                 proc_kwargs["input_boxes"] = [boxes]
-            inputs = self.processor(**proc_kwargs).to(self.device)
+            # BatchFeature.to(dtype=...) casts float tensors only and leaves
+            # integer tensors (input_ids, attention_mask) alone. Needed because
+            # the vision encoder auto-casts pixel_values to model dtype but
+            # the geometry encoder's boxes_direct_project doesn't — a fp32
+            # input_boxes + bf16 model weights otherwise crashes.
+            inputs = self.processor(**proc_kwargs).to(self.device, dtype=self.dtype)
             pixel_values = inputs.pop("pixel_values")
             if vision_embeds is None:
                 vision_embeds = self.model.vision_encoder(pixel_values)

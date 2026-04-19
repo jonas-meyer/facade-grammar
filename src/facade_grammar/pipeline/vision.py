@@ -286,9 +286,11 @@ def features_for_facade(
     if facade_bbox is None:
         return None
 
-    prompts = [
-        SamPrompt(cls, [[float(v) for v in facade_bbox]]) for cls in sam.feature_prompts
-    ]
+    # Text-only — SAM 3 treats text + box as SAM-1-style promptable segmentation
+    # (box dominates, text is ignored). _filter_instances already narrows to
+    # instances whose centre lies inside facade_bbox, which is the effect we
+    # wanted from the box prompt without SAM 3's text-override side-effect.
+    prompts = [SamPrompt(cls) for cls in sam.feature_prompts]
     per_class_results = sam_client.segment(
         view_bytes,
         prompts=prompts,

@@ -101,8 +101,13 @@ class SamConfig(BaseModel):
         ),
     )
     feature_prompts: list[FeatureClass] = Field(
-        default=["window", "door", "gable", "floor"],
-        description="Per-facade sub-feature SAM prompts for Phase 5.",
+        default=["window", "door"],
+        description=(
+            "Per-facade sub-feature SAM prompts for Phase 5. Only classes SAM 3 "
+            "reliably text-grounds on 2D facade views — 'gable'/'roof peak'/"
+            "'pediment' empirically return ~zero masks at the default score "
+            "threshold on canal-house photos."
+        ),
     )
     feature_min_score: float = Field(
         default=0.3,
@@ -133,16 +138,24 @@ class SamConfig(BaseModel):
         description="On-disk location for selected facade + tree masks.",
     )
     pano_thumb_field: Literal["thumb_1024_url", "thumb_2048_url", "thumb_original_url"] = Field(
-        default="thumb_2048_url",
-        description="Mapillary Graph API thumb field fetched per-pano at SAM time.",
+        default="thumb_original_url",
+        description=(
+            "Mapillary Graph API thumb field fetched per-pano at SAM time. "
+            "Original gives the cleanest downsample for reprojection — the "
+            "~50% extra bytes over thumb_2048 is worth it at 45° FoV."
+        ),
     )
     pano_view_size: tuple[int, int] = Field(
         default=(1280, 960),
         description="(W, H) pixels of the rectilinear view fed to SAM.",
     )
     pano_view_fov_deg: float = Field(
-        default=90.0,
-        description="Horizontal field of view of the reprojected pano view.",
+        default=45.0,
+        description=(
+            "Horizontal FoV of the reprojected pano view. SAM 3 resizes inputs "
+            "to 1008² internally, so effective facade pixel density is set by "
+            "FoV × source pano resolution, not by pano_view_size."
+        ),
     )
     bbox_margin_frac: float = Field(
         default=0.08,
