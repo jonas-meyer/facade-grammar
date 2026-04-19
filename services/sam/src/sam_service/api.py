@@ -56,14 +56,8 @@ class SamAPI(ls.LitAPI):
             "mask_threshold": request.mask_threshold,
         }
 
-    def batch(self, inputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return inputs
-
-    def predict(self, x: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [self.backend.segment(**item) for item in x]
-
-    def unbatch(self, output: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return output
+    def predict(self, x: dict[str, Any]) -> dict[str, Any]:
+        return self.backend.segment(**x)
 
     def encode_response(self, output: dict[str, Any]) -> SegmentResponse:
         return SegmentResponse(**output)

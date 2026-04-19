@@ -2,7 +2,7 @@
 name = "sam-service"
 version = "0.1.0"
 description = "HTTP service wrapping SAM 3 for the facade-grammar pipeline."
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "torch>=2.11,<3",
     "torchvision>=0.22,<1",

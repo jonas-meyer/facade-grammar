@@ -13,8 +13,13 @@ from sam_service.config import ServiceConfig
 
 def main() -> None:
     cfg = ServiceConfig()
-    api = SamAPI(max_batch_size=cfg.max_batch_size, batch_timeout=cfg.batch_timeout)
-    server = ls.LitServer(api, accelerator="auto", timeout=cfg.request_timeout)
+    server = ls.LitServer(
+        SamAPI(),
+        accelerator=cfg.accelerator,
+        devices=cfg.devices,
+        workers_per_device=cfg.workers_per_device,
+        timeout=cfg.request_timeout,
+    )
     server.run(host=cfg.host, port=cfg.port, generate_client_file=False)
 
 
