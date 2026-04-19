@@ -19,10 +19,17 @@ from pydantic import SecretStr
 
 from facade_grammar.clients import mapillary
 from facade_grammar.clients import sam as sam_client
-from facade_grammar.clients.sam import SamPrompt
+from facade_grammar.clients.sam import SamInstance, SamPrompt
 from facade_grammar.config import SamConfig
 from facade_grammar.geo import WGS84_GEOD
-from facade_grammar.schemas.buildings import Building, Facade, FacadeMask
+from facade_grammar.schemas.buildings import (
+    Building,
+    Facade,
+    FacadeFeatures,
+    FacadeMask,
+    FeatureClass,
+    FeatureInstance,
+)
 from facade_grammar.schemas.photos import PhotoMetadata
 from facade_grammar.viz.panorama import rectilinear_view, world_to_pixel
 
@@ -130,13 +137,9 @@ def _evaluate_candidates(
         facade_best = max(facade_instances, key=lambda inst: inst.score)
         if facade_best.score < cfg.min_facade_score:
             continue
-        occluder_masks = [
-            inst.mask for group in occluder_instances_lists for inst in group
-        ]
-        occluder_mask = (
-            np.logical_or.reduce(occluder_masks)
-            if occluder_masks
-            else np.zeros(facade_best.mask.shape, dtype=bool)
+        occluder_mask = _union_mask(
+            [inst for group in occluder_instances_lists for inst in group],
+            shape=facade_best.mask.shape,
         )
         yield _Candidate(
             photo=photo,
@@ -240,16 +243,14 @@ def _project_footprint_bbox(
 
 def _occluder_bbox_ratio(facade_mask: np.ndarray, occluder_mask: np.ndarray) -> float:
     """Fraction of the facade's bounding rectangle occupied by occluder pixels."""
-    ys, xs = np.where(facade_mask)
-    if xs.size == 0:
+    bbox = _bbox_of_mask(facade_mask)
+    if bbox is None:
         return 0.0
-    y0, y1 = ys.min(), ys.max() + 1
-    x0, x1 = xs.min(), xs.max() + 1
+    x0, y0, x1, y1 = bbox
     bbox_area = (y1 - y0) * (x1 - x0)
     if bbox_area == 0:
         return 0.0
-    occluder_in_bbox = int(occluder_mask[y0:y1, x0:x1].sum())
-    return float(occluder_in_bbox) / bbox_area
+    return float(occluder_mask[y0:y1, x0:x1].sum()) / bbox_area
 
 
 def _pick_best(candidates: list[_Candidate]) -> _Candidate | None:
@@ -262,3 +263,105 @@ def _write_mask(mask: np.ndarray, path: Path) -> None:
     Image.fromarray((mask * 255).astype(np.uint8)).convert("1").save(
         path, format="PNG", optimize=True
     )
+
+
+@tag(stage="vision")
+def per_facade_mask_for_features(
+    facade_masks: dict[str, FacadeMask],
+) -> Parallelizable[FacadeMask]:
+    """Fan out: one parallel task per facade that survived Phase 4."""
+    yield from facade_masks.values()
+
+
+@tag(stage="vision")
+def features_for_facade(
+    per_facade_mask_for_features: FacadeMask,
+    sam: SamConfig,
+) -> FacadeFeatures | None:
+    """Run SAM against the Phase 4 view to segment sub-features (window/door/gable/floor)."""
+    fm = per_facade_mask_for_features
+    view_bytes = fm.view_path.read_bytes()
+    facade_mask = np.asarray(Image.open(fm.mask_path), dtype=bool)
+    facade_bbox = _bbox_of_mask(facade_mask)
+    if facade_bbox is None:
+        return None
+
+    prompts = [
+        SamPrompt(cls, [[float(v) for v in facade_bbox]]) for cls in sam.feature_prompts
+    ]
+    per_class_results = sam_client.segment(
+        view_bytes,
+        prompts=prompts,
+        base_url=str(sam.service_url),
+        timeout_s=sam.http_timeout_s,
+    )
+
+    out_dir = sam.features_dir / fm.building_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    instances: list[FeatureInstance] = []
+    class_mask_paths: dict[FeatureClass, Path] = {}
+    for cls, class_instances in zip(sam.feature_prompts, per_class_results, strict=True):
+        kept = _filter_instances(class_instances, facade_bbox, sam.feature_min_score)
+        class_mask_path = out_dir / f"{cls}.png"
+        _write_mask(_union_mask(kept, shape=facade_mask.shape), class_mask_path)
+        class_mask_paths[cls] = class_mask_path
+        for inst in kept:
+            x0, y0, x1, y1 = inst.box
+            instances.append(
+                FeatureInstance(
+                    cls=cls,
+                    score=inst.score,
+                    bbox=(round(x0), round(y0), round(x1), round(y1)),
+                )
+            )
+    return FacadeFeatures(
+        building_id=fm.building_id,
+        photo_id=fm.photo_id,
+        view_path=fm.view_path,
+        class_mask_paths=class_mask_paths,
+        instances=instances,
+    )
+
+
+@tag(stage="vision")
+def facade_features(
+    features_for_facade: Collect[FacadeFeatures | None],
+) -> dict[str, FacadeFeatures]:
+    """Collect per-facade features, dropping facades with no survivor."""
+    return {f.building_id: f for f in features_for_facade if f is not None}
+
+
+def _bbox_of_mask(mask: np.ndarray) -> tuple[int, int, int, int] | None:
+    """Axis-aligned xyxy bbox of True pixels, or None if the mask is empty."""
+    ys, xs = np.where(mask)
+    if xs.size == 0:
+        return None
+    return int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+
+
+def _centre_inside(
+    bbox: tuple[float, float, float, float],
+    container: tuple[int, int, int, int],
+) -> bool:
+    cx = (bbox[0] + bbox[2]) / 2
+    cy = (bbox[1] + bbox[3]) / 2
+    return container[0] <= cx <= container[2] and container[1] <= cy <= container[3]
+
+
+def _filter_instances(
+    instances: list[SamInstance],
+    container: tuple[int, int, int, int],
+    min_score: float,
+) -> list[SamInstance]:
+    return [
+        inst
+        for inst in instances
+        if inst.score >= min_score and _centre_inside(inst.box, container)
+    ]
+
+
+def _union_mask(instances: list[SamInstance], *, shape: tuple[int, ...]) -> np.ndarray:
+    if not instances:
+        return np.zeros(shape, dtype=bool)
+    return np.logical_or.reduce([inst.mask for inst in instances])

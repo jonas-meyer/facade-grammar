@@ -74,7 +74,12 @@ def main(
     )
 
     result = dr.execute(
-        final_vars=["area_map", "canal_selection_map", "facade_mask_contact_sheet"],
+        final_vars=[
+            "area_map",
+            "canal_selection_map",
+            "facade_mask_contact_sheet",
+            "facade_features_contact_sheet",
+        ],
         inputs={
             "area_bbox": cfg.area,
             "mapillary_token": cfg.mapillary_token,
@@ -87,6 +92,7 @@ def main(
     typer.echo(f"area_map: {result['area_map']}")
     typer.echo(f"canal_selection_map: {result['canal_selection_map']}")
     typer.echo(f"facade_mask_contact_sheet: {result['facade_mask_contact_sheet']}")
+    typer.echo(f"facade_features_contact_sheet: {result['facade_features_contact_sheet']}")
 
 
 def cli() -> None:

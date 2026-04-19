@@ -51,3 +51,22 @@ class FacadeMask(BaseModel):
     facade_score: float = Field(ge=0, le=1)
     occluder_ratio: float = Field(ge=0)
     projected_bbox: tuple[int, int, int, int] | None = None
+
+
+FeatureClass = Literal["window", "door", "gable", "floor"]
+
+
+class FeatureInstance(BaseModel):
+    cls: FeatureClass
+    score: float = Field(ge=0, le=1)
+    bbox: tuple[int, int, int, int]
+
+
+class FacadeFeatures(BaseModel):
+    """Per-class SAM 3 segmentation results for sub-features of a chosen facade."""
+
+    building_id: str
+    photo_id: str
+    view_path: Path
+    class_mask_paths: dict[FeatureClass, Path]
+    instances: list[FeatureInstance]

@@ -20,12 +20,24 @@ from matplotlib.collections import LineCollection, PolyCollection
 from PIL import Image
 
 from facade_grammar.geo import WGS84_GEOD
-from facade_grammar.schemas.buildings import Building, Facade, FacadeMask
+from facade_grammar.schemas.buildings import (
+    Building,
+    Facade,
+    FacadeFeatures,
+    FacadeMask,
+    FeatureClass,
+)
 from facade_grammar.schemas.photos import PhotoMetadata
 
 _CONTACT_SHEET_ROWS = 4
 _CONTACT_SHEET_COLS = 3
 _CONTACT_SHEET_SEED = 42
+_FEATURE_COLORS: dict[FeatureClass, str] = {
+    "window": "#1f77b4",
+    "door": "#ff7f0e",
+    "gable": "#9467bd",
+    "floor": "#f1c40f",
+}
 
 
 def plot_area_map(
@@ -97,20 +109,11 @@ def plot_facade_mask_contact_sheet(
     out_path: Path,
 ) -> Path:
     """Grid of selected facades with SAM masks + projected bbox for eyeball QA."""
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    n_cells = _CONTACT_SHEET_ROWS * _CONTACT_SHEET_COLS
-    rng = random.Random(_CONTACT_SHEET_SEED)
-    sample = rng.sample(list(facade_masks.values()), min(n_cells, len(facade_masks)))
-
-    fig, axes = plt.subplots(
-        _CONTACT_SHEET_ROWS, _CONTACT_SHEET_COLS, figsize=(12, 14)
-    )
-    for ax in axes.flat:
-        ax.axis("off")
+    fig, cells, sample = _init_contact_sheet(list(facade_masks.values()), out_path)
 
     scores: list[float] = []
     ratios: list[float] = []
-    for ax, fm in zip(axes.flat, sample, strict=False):
+    for ax, fm in zip(cells, sample, strict=False):
         image = Image.open(fm.view_path).convert("RGB")
         ax.imshow(np.asarray(image))
         facade = _load_mask(fm.mask_path)
@@ -139,6 +142,54 @@ def plot_facade_mask_contact_sheet(
         f"mean occluder coverage {mean_r:.0%}",
         fontsize=11,
     )
+    return _save_contact_sheet(fig, out_path)
+
+
+def plot_facade_features_contact_sheet(
+    *,
+    facade_features: dict[str, FacadeFeatures],
+    out_path: Path,
+) -> Path:
+    """Grid of facades with per-class feature outlines (window/door/gable/floor)."""
+    fig, cells, sample = _init_contact_sheet(list(facade_features.values()), out_path)
+
+    class_counts: dict[FeatureClass, list[int]] = {cls: [] for cls in _FEATURE_COLORS}
+    for ax, ff in zip(cells, sample, strict=False):
+        image = Image.open(ff.view_path).convert("RGB")
+        ax.imshow(np.asarray(image))
+        counts: dict[FeatureClass, int] = dict.fromkeys(_FEATURE_COLORS, 0)
+        for cls, path in ff.class_mask_paths.items():
+            mask = _load_mask(path)
+            if mask.any():
+                ax.contour(mask, levels=[0.5], colors=_FEATURE_COLORS[cls], linewidths=1.0)
+            counts[cls] = sum(1 for inst in ff.instances if inst.cls == cls)
+        for cls in class_counts:
+            class_counts[cls].append(counts[cls])
+        count_str = " ".join(f"{cls[0]}={counts[cls]}" for cls in _FEATURE_COLORS)
+        ax.set_title(f"{ff.building_id[:10]}  {count_str}", fontsize=8)
+
+    means_str = "  ".join(
+        f"#{cls}={(sum(vals) / len(vals) if vals else 0.0):.1f}"
+        for cls, vals in class_counts.items()
+    )
+    fig.suptitle(f"{len(facade_features)} facades — mean {means_str}", fontsize=11)
+    return _save_contact_sheet(fig, out_path)
+
+
+def _init_contact_sheet[T](
+    items: list[T], out_path: Path
+) -> tuple[plt.Figure, list[Axes], list[T]]:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    n_cells = _CONTACT_SHEET_ROWS * _CONTACT_SHEET_COLS
+    rng = random.Random(_CONTACT_SHEET_SEED)
+    sample = rng.sample(items, min(n_cells, len(items)))
+    fig, axes = plt.subplots(_CONTACT_SHEET_ROWS, _CONTACT_SHEET_COLS, figsize=(12, 14))
+    for ax in axes.flat:
+        ax.axis("off")
+    return fig, list(axes.flat), sample
+
+
+def _save_contact_sheet(fig: plt.Figure, out_path: Path) -> Path:
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
     plt.close(fig)
     return out_path

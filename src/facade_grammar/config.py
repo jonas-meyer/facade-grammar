@@ -17,6 +17,8 @@ from pydantic_settings import (
     YamlConfigSettingsSource,
 )
 
+from facade_grammar.schemas.buildings import FeatureClass
+
 
 class Bbox(NamedTuple):
     """WGS84 bounding box. NamedTuple so Hamilton's input type-check can isinstance-validate it."""
@@ -97,6 +99,18 @@ class SamConfig(BaseModel):
             "Phrase prompts for things that occlude a canal facade from across-canal views. "
             "Masks are unioned before the bbox-occlusion metric is computed."
         ),
+    )
+    feature_prompts: list[FeatureClass] = Field(
+        default=["window", "door", "gable", "floor"],
+        description="Per-facade sub-feature SAM prompts for Phase 5.",
+    )
+    feature_min_score: float = Field(
+        default=0.3,
+        description="Reject individual feature instances below this SAM score.",
+    )
+    features_dir: Path = Field(
+        default=Path("data/features"),
+        description="Per-building directory for class-union feature mask PNGs.",
     )
     min_facade_score: float = Field(
         default=0.3,

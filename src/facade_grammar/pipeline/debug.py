@@ -5,11 +5,17 @@ from pathlib import Path
 import polars as pl
 from hamilton.function_modifiers import cache, tag
 
-from facade_grammar.schemas.buildings import Building, Facade, FacadeMask
+from facade_grammar.schemas.buildings import (
+    Building,
+    Facade,
+    FacadeFeatures,
+    FacadeMask,
+)
 from facade_grammar.schemas.photos import PhotoMetadata
 from facade_grammar.viz.plots import (
     plot_area_map,
     plot_canal_selection,
+    plot_facade_features_contact_sheet,
     plot_facade_mask_contact_sheet,
 )
 
@@ -57,4 +63,13 @@ def facade_mask_contact_sheet(facade_masks: dict[str, FacadeMask]) -> Path:
     return plot_facade_mask_contact_sheet(
         facade_masks=facade_masks,
         out_path=Path("data/debug/facade_mask_contact_sheet.png"),
+    )
+
+
+@cache(behavior="recompute")
+@tag(stage="debug")
+def facade_features_contact_sheet(facade_features: dict[str, FacadeFeatures]) -> Path:
+    return plot_facade_features_contact_sheet(
+        facade_features=facade_features,
+        out_path=Path("data/debug/facade_features_contact_sheet.png"),
     )
