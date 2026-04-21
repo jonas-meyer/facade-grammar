@@ -9,6 +9,8 @@ from facade_grammar.schemas.buildings import (
     Building,
     Facade,
     FacadeFeatures,
+    FacadeGrammar,
+    FacadeLattice,
     FacadeMask,
 )
 from facade_grammar.schemas.photos import PhotoMetadata
@@ -16,6 +18,8 @@ from facade_grammar.viz.plots import (
     plot_area_map,
     plot_canal_selection,
     plot_facade_features_contact_sheet,
+    plot_facade_grammar_contact_sheet,
+    plot_facade_lattice_contact_sheet,
     plot_facade_mask_contact_sheet,
 )
 
@@ -72,4 +76,30 @@ def facade_features_contact_sheet(facade_features: dict[str, FacadeFeatures]) ->
     return plot_facade_features_contact_sheet(
         facade_features=facade_features,
         out_path=Path("data/debug/facade_features_contact_sheet.png"),
+    )
+
+
+@cache(behavior="recompute")
+@tag(stage="debug")
+def facade_grammar_contact_sheet(
+    facade_grammars: dict[str, FacadeGrammar],
+    facade_masks: dict[str, FacadeMask],
+) -> Path:
+    return plot_facade_grammar_contact_sheet(
+        facade_grammars=facade_grammars,
+        facade_masks=facade_masks,
+        out_path=Path("data/debug/facade_grammar_contact_sheet.png"),
+    )
+
+
+@cache(behavior="recompute")
+@tag(stage="debug")
+def facade_lattice_contact_sheet(
+    facade_lattices: dict[str, FacadeLattice],
+    facade_masks: dict[str, FacadeMask],
+) -> Path:
+    return plot_facade_lattice_contact_sheet(
+        facade_lattices=facade_lattices,
+        facade_masks=facade_masks,
+        out_path=Path("data/debug/facade_lattice_contact_sheet.png"),
     )

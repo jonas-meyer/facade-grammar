@@ -6,6 +6,7 @@ for"). We tile the input bbox into an NxN grid and query each tile; tiles
 that still 500 get halved recursively.
 """
 
+import itertools
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
@@ -18,7 +19,10 @@ from facade_grammar.schemas.photos import PhotoMetadata
 
 GRAPH_URL = "https://graph.mapillary.com/images"
 _IMAGE_URL = "https://graph.mapillary.com/{image_id}"
-_FIELDS = "id,computed_geometry,computed_altitude,compass_angle,captured_at,is_pano,thumb_1024_url"
+_FIELDS = (
+    "id,computed_geometry,computed_altitude,compass_angle,captured_at,"
+    "is_pano,thumb_1024_url,quality_score"
+)
 _TILE_GRID = 4
 _RECURSIVE_SPLIT_MAX_DEPTH = 2
 
@@ -42,6 +46,9 @@ class _MapillaryPhoto(BaseModel):
     captured_at: int  # milliseconds since the epoch
     is_pano: bool = False
     thumb_1024_url: HttpUrl
+    # Mapillary's own photo-quality score, 0-1. Absent (None) on older
+    # sequences predating the scoring rollout.
+    quality_score: float | None = None
 
     def to_photo_metadata(self) -> PhotoMetadata | None:
         if self.lon is None or self.lat is None:
@@ -60,6 +67,7 @@ class _MapillaryPhoto(BaseModel):
             captured_at=datetime.fromtimestamp(self.captured_at / 1000, tz=UTC),
             is_pano=self.is_pano,
             url=self.thumb_1024_url,
+            quality_score=self.quality_score,
         )
 
 
@@ -122,14 +130,13 @@ def _tile_bbox(bbox: Bbox, *, grid: int) -> Iterator[Bbox]:
     min_lon, min_lat, max_lon, max_lat = bbox
     lon_step = (max_lon - min_lon) / grid
     lat_step = (max_lat - min_lat) / grid
-    for ix in range(grid):
-        for iy in range(grid):
-            yield Bbox(
-                min_lon + ix * lon_step,
-                min_lat + iy * lat_step,
-                min_lon + (ix + 1) * lon_step,
-                min_lat + (iy + 1) * lat_step,
-            )
+    for ix, iy in itertools.product(range(grid), range(grid)):
+        yield Bbox(
+            min_lon + ix * lon_step,
+            min_lat + iy * lat_step,
+            min_lon + (ix + 1) * lon_step,
+            min_lat + (iy + 1) * lat_step,
+        )
 
 
 def _stream_tile(

@@ -1,7 +1,7 @@
 """Data ingestion nodes: 3D BAG buildings, OSM streets + waterways, Mapillary photo metadata."""
 
 import polars as pl
-from hamilton.function_modifiers import dataloader, tag
+from hamilton.function_modifiers import check_output, dataloader, tag
 from pydantic import SecretStr
 
 from facade_grammar.clients import bag3d, mapillary, osm
@@ -9,6 +9,7 @@ from facade_grammar.config import Bbox, IngestionConfig
 from facade_grammar.geo import RD_TO_WGS84, WGS84_TO_RD
 from facade_grammar.schemas.buildings import Building
 from facade_grammar.schemas.photos import PhotoMetadata
+from facade_grammar.schemas.tables import OsmStreetsSchema, OsmWaterwaysSchema
 
 
 def _expand_bbox(bbox: Bbox, buffer_m: float) -> Bbox:
@@ -28,6 +29,7 @@ def raw_buildings(area_bbox: Bbox) -> tuple[list[Building], dict[str, str]]:
     return data, {"source": "3dbag", "n": str(len(data)), "bbox": str(area_bbox)}
 
 
+@check_output(schema=OsmStreetsSchema.to_schema(), importance="fail")
 @dataloader()
 @tag(stage="ingestion", source="osm")
 def raw_streets(area_bbox: Bbox) -> tuple[pl.DataFrame, dict[str, str]]:
@@ -35,6 +37,7 @@ def raw_streets(area_bbox: Bbox) -> tuple[pl.DataFrame, dict[str, str]]:
     return data, {"source": "osm_streets", "n": str(len(data)), "bbox": str(area_bbox)}
 
 
+@check_output(schema=OsmWaterwaysSchema.to_schema(), importance="fail")
 @dataloader()
 @tag(stage="ingestion", source="osm")
 def raw_waterways(area_bbox: Bbox) -> tuple[pl.DataFrame, dict[str, str]]:

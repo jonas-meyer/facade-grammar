@@ -8,15 +8,23 @@ returns N aligned instance lists.
 
 import base64
 import io
+import logging
+import time
 from typing import NamedTuple
 
 import httpx
 import numpy as np
+from numpy.typing import NDArray
 from PIL import Image
+from pydantic import BaseModel, ConfigDict, TypeAdapter
+
+log = logging.getLogger(__name__)
+
+BoolMask = NDArray[np.bool_]
 
 
 class SamInstance(NamedTuple):
-    mask: np.ndarray
+    mask: BoolMask
     score: float
     box: tuple[float, float, float, float]
 
@@ -26,38 +34,93 @@ class SamPrompt(NamedTuple):
     boxes: list[list[float]] | None = None
 
 
+class _PredictPrompt(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    boxes: list[list[float]] | None = None
+
+
+class _PredictRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    image_b64: str
+    prompts: list[_PredictPrompt]
+
+
+class _PredictResult(BaseModel):
+    """One prompt's worth of SAM output: three aligned arrays."""
+
+    model_config = ConfigDict(frozen=True)
+
+    masks: list[str]
+    scores: list[float]
+    boxes: list[list[float]]
+
+
+_RESULTS_ADAPTER: TypeAdapter[list[_PredictResult]] = TypeAdapter(list[_PredictResult])
+
+
 def segment(
     image_bytes: bytes,
     *,
     prompts: list[SamPrompt],
     base_url: str,
     timeout_s: float,
+    retries: int = 0,
+    retry_base_delay_s: float = 1.0,
 ) -> list[list[SamInstance]]:
-    """POST one image with N prompts; return N aligned instance lists."""
-    payload: dict[str, object] = {
-        "image_b64": base64.b64encode(image_bytes).decode("ascii"),
-        "prompts": [
-            {"text": p.text, **({"boxes": p.boxes} if p.boxes is not None else {})}
-            for p in prompts
-        ],
-    }
-    with httpx.Client(timeout=timeout_s) as client:
-        resp = client.post(f"{base_url.rstrip('/')}/predict", json=payload)
-        resp.raise_for_status()
-        body = resp.json()
-    return [
-        [
-            SamInstance(
-                mask=_decode_mask(mask_b64),
-                score=score,
-                box=(b[0], b[1], b[2], b[3]),
+    """POST one image with N prompts; return N aligned instance lists.
+
+    Retries transport errors and 5xx with exponential backoff; 4xx (caller
+    bug) is not retried. ``retries=0`` disables retrying entirely.
+    """
+    request = _PredictRequest(
+        image_b64=base64.b64encode(image_bytes).decode("ascii"),
+        prompts=[_PredictPrompt(text=p.text, boxes=p.boxes) for p in prompts],
+    )
+    url = f"{base_url.rstrip('/')}/predict"
+    for attempt in range(retries + 1):
+        try:
+            with httpx.Client(timeout=timeout_s) as client:
+                resp = client.post(url, json=request.model_dump(exclude_none=True))
+                resp.raise_for_status()
+                results = _RESULTS_ADAPTER.validate_python(resp.json()["results"])
+            return [_decode_result(r) for r in results]
+        except httpx.HTTPError as exc:
+            if attempt >= retries or not _is_retryable(exc):
+                raise
+            delay = retry_base_delay_s * (2**attempt)
+            log.warning(
+                "sam-service request failed (attempt %d/%d: %s); retrying in %.1fs",
+                attempt + 1,
+                retries + 1,
+                exc,
+                delay,
             )
-            for mask_b64, score, b in zip(r["masks"], r["scores"], r["boxes"], strict=True)
-        ]
-        for r in body["results"]
+            time.sleep(delay)
+    raise RuntimeError("unreachable")
+
+
+def _decode_result(result: _PredictResult) -> list[SamInstance]:
+    return [
+        SamInstance(
+            mask=_decode_mask(mask_b64),
+            score=score,
+            box=(box[0], box[1], box[2], box[3]),
+        )
+        for mask_b64, score, box in zip(result.masks, result.scores, result.boxes, strict=True)
     ]
 
 
-def _decode_mask(mask_b64: str) -> np.ndarray:
+def _is_retryable(exc: httpx.HTTPError) -> bool:
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return False
+
+
+def _decode_mask(mask_b64: str) -> BoolMask:
     img = Image.open(io.BytesIO(base64.b64decode(mask_b64)))
     return np.asarray(img, dtype=bool)

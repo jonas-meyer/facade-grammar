@@ -20,8 +20,8 @@ _FACADE_START_RD = (0.0, 0.0)
 _FACADE_END_RD = (10.0, 0.0)
 _FACADE_MID_RD = (5.0, 0.0)
 _EDGE = LineString([_FACADE_START_RD, _FACADE_END_RD])
-_NORMAL = (0.0, 1.0)      # points north (+y)
-_NORMAL_DEG = 0.0         # compass azimuth
+_NORMAL = (0.0, 1.0)  # points north (+y)
+_NORMAL_DEG = 0.0  # compass azimuth
 
 
 def _photo(
@@ -30,6 +30,7 @@ def _photo(
     lat: float = 52.37,
     *,
     bearing: float | None = 180.0,
+    is_pano: bool = False,
 ) -> PhotoMetadata:
     return PhotoMetadata(
         photo_id=photo_id,
@@ -37,6 +38,7 @@ def _photo(
         lat=lat,
         bearing_deg=bearing,
         captured_at=datetime(2024, 1, 1, tzinfo=UTC),
+        is_pano=is_pano,
         url=HttpUrl("https://example.com/x.jpg"),
     )
 
@@ -107,7 +109,7 @@ def test_top_k_without_water_orders_by_distance() -> None:
     close = _photo("close", bearing=180.0)
     far = _photo("far", bearing=180.0)
     close_rd = (mx, my + 10.0)
-    far_rd = (mx, my + 30.0)
+    far_rd = (mx, my + 20.0)
     w1 = _top_k_photos(facade, edge, (mx, my), [close, far], [close_rd, far_rd], empty_tree, _CFG)
     w2 = _top_k_photos(facade, edge, (mx, my), [far, close], [far_rd, close_rd], empty_tree, _CFG)
     assert [p.photo_id for p in w1] == ["close", "far"]
@@ -117,14 +119,12 @@ def test_top_k_without_water_orders_by_distance() -> None:
 def test_top_k_prefers_across_canal_over_same_side() -> None:
     facade, edge, (mx, my) = _canal_facade()
     # Canal strip east-west, north of the facade.
-    canal = LineString([(mx - 100.0, my + 15.0), (mx + 100.0, my + 15.0)])
+    canal = LineString([(mx - 100.0, my + 12.0), (mx + 100.0, my + 12.0)])
     tree = STRtree([canal])
     near_same_side = _photo("near-same", bearing=180.0)
     far_across = _photo("far-across", bearing=180.0)
-    # near_rd sight line doesn't reach the canal strip at y=15;
-    # far_rd sight line from (mx, my+30) to the midpoint crosses y=15.
-    near_rd = (mx, my + 10.0)
-    far_rd = (mx, my + 30.0)
+    near_rd = (mx, my + 8.0)
+    far_rd = (mx, my + 20.0)
     result = _top_k_photos(
         facade, edge, (mx, my), [near_same_side, far_across], [near_rd, far_rd], tree, _CFG
     )
@@ -147,3 +147,21 @@ def test_top_k_respects_k_limit() -> None:
     tight = _CFG.model_copy(update={"top_k": 2})
     result = _top_k_photos(facade, edge, (mx, my), photos, photos_rd, STRtree([]), tight)
     assert len(result) == 2
+
+
+def test_top_k_drops_perspective_photo_beyond_perspective_dist_cap() -> None:
+    """Perspective photos only get picked when close enough to dominate the frame."""
+    facade, edge, (mx, my) = _canal_facade()
+    far_perspective = _photo("far-perspective", bearing=180.0, is_pano=False)
+    far_rd = (mx, my + _CFG.perspective_max_dist_m + 5.0)
+    result = _top_k_photos(facade, edge, (mx, my), [far_perspective], [far_rd], STRtree([]), _CFG)
+    assert result == []
+
+
+def test_top_k_keeps_pano_beyond_perspective_dist_cap() -> None:
+    """Panos bypass the perspective-only distance cap because reprojection locks the view."""
+    facade, edge, (mx, my) = _canal_facade()
+    far_pano = _photo("far-pano", bearing=180.0, is_pano=True)
+    far_rd = (mx, my + _CFG.perspective_max_dist_m + 5.0)
+    result = _top_k_photos(facade, edge, (mx, my), [far_pano], [far_rd], STRtree([]), _CFG)
+    assert [p.photo_id for p in result] == ["far-pano"]

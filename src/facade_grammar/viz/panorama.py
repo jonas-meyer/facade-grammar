@@ -90,26 +90,37 @@ def world_to_pixel(
     world_lat: float,
     world_z_m: float,
     view_yaw_deg: float,
+    view_pitch_deg: float = 0.0,
     fov_deg: float,
     size_px: tuple[int, int],
 ) -> tuple[float, float] | None:
     """Project a WGS84 world point into a rectilinear view's pixel coords.
 
     ``camera_z_m`` and ``world_z_m`` must share the same vertical reference.
-    Returns ``None`` if the point falls outside the horizontal frustum.
+    ``view_pitch_deg`` must match the pitch used in ``rectilinear_view`` so the
+    pixel coords line up. Returns ``None`` if the point is behind the camera.
     """
     azimuth, _, distance_m = WGS84_GEOD.inv(photo_lon, photo_lat, world_lon, world_lat)
     if distance_m < 1e-6:
         return None
     elevation_rad = math.atan2(world_z_m - camera_z_m, distance_m)
     yaw_rel_rad = math.radians(((azimuth - view_yaw_deg) + 180) % 360 - 180)
-    fov_rad = math.radians(fov_deg)
-    if abs(yaw_rel_rad) >= fov_rad / 2:
+    pitch_rad = math.radians(view_pitch_deg)
+    # Direction in the view-aimed frame (camera looks along +z), before applying pitch:
+    cos_e = math.cos(elevation_rad)
+    wx = math.sin(yaw_rel_rad) * cos_e
+    wy = -math.sin(elevation_rad)
+    wz = math.cos(yaw_rel_rad) * cos_e
+    # Rotate -pitch around the x-axis to transform into camera frame (pinhole):
+    cos_p, sin_p = math.cos(pitch_rad), math.sin(pitch_rad)
+    ray_y = cos_p * wy + sin_p * wz
+    ray_z = -sin_p * wy + cos_p * wz
+    if ray_z <= 1e-9:
         return None
-    w, h = size_px
-    focal = w / (2 * math.tan(fov_rad / 2))
-    x = math.tan(yaw_rel_rad) * focal + w / 2
-    y = -math.tan(elevation_rad) * focal + h / 2
+    fov_rad = math.radians(fov_deg)
+    focal = size_px[0] / (2 * math.tan(fov_rad / 2))
+    x = wx / ray_z * focal + size_px[0] / 2
+    y = ray_y / ray_z * focal + size_px[1] / 2
     return x, y
 
 

@@ -18,12 +18,12 @@ from hamilton.plugins import h_rich
 
 from facade_grammar.config import AppConfig
 from facade_grammar.pipeline import (
+    audit,
     debug,
     grammar,
     ingestion,
     outputs,
-    per_building,
-    projection,
+    regularization,
     selection,
     spatial,
     vision,
@@ -53,10 +53,10 @@ def main(
             ingestion,
             spatial,
             selection,
-            projection,
             vision,
-            per_building,
+            audit,
             grammar,
+            regularization,
             debug,
             outputs,
         )
@@ -79,6 +79,13 @@ def main(
             "canal_selection_map",
             "facade_mask_contact_sheet",
             "facade_features_contact_sheet",
+            "facade_grammar_contact_sheet",
+            "facade_lattice_contact_sheet",
+            "facade_grammars",
+            "grammar_json",
+            "features_csv",
+            "lattices_json",
+            "audit_jsonl",
         ],
         inputs={
             "area_bbox": cfg.area,
@@ -87,12 +94,33 @@ def main(
             "spatial": cfg.spatial,
             "selection": cfg.selection,
             "sam": cfg.sam,
+            "grammar": cfg.grammar,
+            "cache": cfg.cache,
         },
     )
     typer.echo(f"area_map: {result['area_map']}")
     typer.echo(f"canal_selection_map: {result['canal_selection_map']}")
     typer.echo(f"facade_mask_contact_sheet: {result['facade_mask_contact_sheet']}")
     typer.echo(f"facade_features_contact_sheet: {result['facade_features_contact_sheet']}")
+    typer.echo(f"facade_grammar_contact_sheet: {result['facade_grammar_contact_sheet']}")
+    typer.echo(f"facade_lattice_contact_sheet: {result['facade_lattice_contact_sheet']}")
+    typer.echo(f"grammar_json: {result['grammar_json']}")
+    typer.echo(f"features_csv: {result['features_csv']}")
+    typer.echo(f"lattices_json: {result['lattices_json']}")
+    typer.echo(f"audit_jsonl: {result['audit_jsonl']}")
+    typer.echo(f"facade_grammars: {len(result['facade_grammars'])} building(s)")
+    for bid, g in result["facade_grammars"].items():
+        year = g.bag_construction_year or "?"
+        bag_fc = "?" if g.bag_floor_count is None else g.bag_floor_count
+        match = {True: "✓", False: "✗", None: "—"}[g.n_floors_matches_bag]
+        gable = f"{g.gable_prominence_m:.1f}m" if g.gable_prominence_m is not None else "?"
+        typer.echo(
+            f"  {bid[-16:]}  yr={year}  roof={g.bag_roof_type or '?'}  "
+            f"floors={g.n_floors}/{bag_fc}{match}  "
+            f"cols={g.n_columns}  w={g.n_windows_used}  "
+            f"facade={g.facade_width_m:.1f}x{g.facade_height_m:.1f}m  "
+            f"gable={gable}"
+        )
 
 
 def cli() -> None:

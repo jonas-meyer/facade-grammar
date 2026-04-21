@@ -1,16 +1,23 @@
-"""Render the full Hamilton DAG to ``docs/dag.png``."""
+"""Render the full Hamilton DAG to ``docs/dag.png``.
+
+The single source of truth for the pipeline's stage story: ingestion →
+spatial → selection → vision → audit → grammar → regularization → debug +
+outputs. Nodes group by their ``stage=`` tag; edges show data flow.
+Cache-boundary intent (e.g. ``audit`` downstream of ``vision`` so new audit
+fields don't invalidate the SAM cache) reads directly off the layout.
+"""
 
 from pathlib import Path
 
 from hamilton import driver
 
 from facade_grammar.pipeline import (
+    audit,
     debug,
     grammar,
     ingestion,
     outputs,
-    per_building,
-    projection,
+    regularization,
     selection,
     spatial,
     vision,
@@ -24,10 +31,10 @@ def main() -> None:
             ingestion,
             spatial,
             selection,
-            projection,
             vision,
-            per_building,
+            audit,
             grammar,
+            regularization,
             debug,
             outputs,
         )

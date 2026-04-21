@@ -18,24 +18,50 @@ _PAGE_SIZE = 1000
 
 
 class _BagBuilding(BaseModel):
-    """A 3D BAG WFS feature (``BAG3D:lod12`` layer)."""
+    """A 3D BAG WFS feature (``BAG3D:lod12`` layer).
+
+    ``b3_h_max`` is the roof-ridge height above NAP; ``b3_h_70p`` is roughly
+    the eaves (70th-percentile roof elevation). Their difference is the
+    gable prominence — real-world proxy for step-gable vs flat-roof.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
     geometry: dict[str, Any]
     identificatie: str = Field(validation_alias=AliasPath("properties", "identificatie"))
     b3_h_max: float = Field(validation_alias=AliasPath("properties", "b3_h_max"))
+    b3_h_70p: float | None = Field(
+        default=None, validation_alias=AliasPath("properties", "b3_h_70p")
+    )
     b3_h_maaiveld: float = Field(validation_alias=AliasPath("properties", "b3_h_maaiveld"))
+    b3_bouwlagen: int | None = Field(
+        default=None, validation_alias=AliasPath("properties", "b3_bouwlagen")
+    )
+    b3_dak_type: str | None = Field(
+        default=None, validation_alias=AliasPath("properties", "b3_dak_type")
+    )
+    oorspronkelijkbouwjaar: int | None = Field(
+        default=None, validation_alias=AliasPath("properties", "oorspronkelijkbouwjaar")
+    )
+    b3_opp_grond: float | None = Field(
+        default=None, validation_alias=AliasPath("properties", "b3_opp_grond")
+    )
 
     def to_building(self) -> Building:
         polygon = shapely.get_parts(shapely.geometry.shape(self.geometry))[0]
         ring = list(polygon.exterior.coords)
         lons, lats = RD_TO_WGS84.transform([p[0] for p in ring], [p[1] for p in ring])
+        eaves_height_m = self.b3_h_70p - self.b3_h_maaiveld if self.b3_h_70p is not None else None
         return Building(
             building_id=self.identificatie,
             footprint=list(zip(lons, lats, strict=True)),
             height_m=self.b3_h_max - self.b3_h_maaiveld,
+            eaves_height_m=eaves_height_m,
             ground_altitude_m=self.b3_h_maaiveld,
+            floor_count=self.b3_bouwlagen,
+            roof_type=self.b3_dak_type,
+            construction_year=self.oorspronkelijkbouwjaar,
+            footprint_area_m2=self.b3_opp_grond,
         )
 
 

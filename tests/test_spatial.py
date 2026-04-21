@@ -30,8 +30,8 @@ def test_ensure_ccw_reverses_cw_ring() -> None:
 
 def test_edge_normal_deg_cardinal_edges_of_ccw_square() -> None:
     assert _edge_normal_deg(_CCW[0], _CCW[1]) == 180.0  # south edge, outward = south
-    assert _edge_normal_deg(_CCW[1], _CCW[2]) == 90.0   # east edge
-    assert _edge_normal_deg(_CCW[2], _CCW[3]) == 0.0    # north edge
+    assert _edge_normal_deg(_CCW[1], _CCW[2]) == 90.0  # east edge
+    assert _edge_normal_deg(_CCW[2], _CCW[3]) == 0.0  # north edge
     assert _edge_normal_deg(_CCW[3], _CCW[0]) == 270.0  # west edge
 
 
