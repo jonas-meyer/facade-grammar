@@ -66,15 +66,18 @@ def _window(x: int, y: int, score: float = 0.9, cls: FeatureClass = "window") ->
     return FeatureInstance(cls=cls, score=score, bbox=(x - 5, y - 5, x + 5, y + 5))
 
 
-def test_build_lattice_fills_each_2x2_cell_with_its_detection() -> None:
+def test_build_lattice_places_each_window_in_exactly_one_cell() -> None:
     lattice = _build_lattice(
         _grammar(),
         _features(_window(25, 25), _window(75, 25), _window(25, 75), _window(75, 75)),
         _mask(),
     )
     assert lattice is not None
-    assert lattice.n_rows == 2 and lattice.n_cols == 2
-    assert all(cell.cls == "window" for cell in lattice.cells)
+    windows = [c for c in lattice.cells if c.cls == "window"]
+    walls = [c for c in lattice.cells if c.cls == "wall"]
+    # Four input windows → four window cells; the rest are wall (finer lattice).
+    assert len(windows) == 4
+    assert len(walls) == lattice.n_rows * lattice.n_cols - 4
 
 
 def test_build_lattice_empty_cells_default_to_wall() -> None:
@@ -83,7 +86,9 @@ def test_build_lattice_empty_cells_default_to_wall() -> None:
     by_class: dict[str, int] = {}
     for cell in lattice.cells:
         by_class[cell.cls] = by_class.get(cell.cls, 0) + 1
-    assert by_class == {"window": 1, "wall": 3}
+    # One feature → one non-wall cell; everything else is wall.
+    assert by_class.get("window", 0) == 1
+    assert by_class.get("wall", 0) == lattice.n_rows * lattice.n_cols - 1
 
 
 def test_build_lattice_picks_highest_scoring_detection_per_cell() -> None:
@@ -93,9 +98,12 @@ def test_build_lattice_picks_highest_scoring_detection_per_cell() -> None:
         _mask(),
     )
     assert lattice is not None
-    top_left = next(c for c in lattice.cells if c.row == 0 and c.col == 0)
-    assert top_left.cls == "door"
-    assert top_left.score == 0.9
+    # Both bbox centres (25,25 and 27,27) normalise to ~0.25 — land in the
+    # same cell with the new finer boundary scheme. Winner is the higher score.
+    winners = [c for c in lattice.cells if c.cls != "wall"]
+    assert len(winners) == 1
+    assert winners[0].cls == "door"
+    assert winners[0].score == 0.9
 
 
 def test_build_lattice_drops_detections_outside_facade_bbox() -> None:

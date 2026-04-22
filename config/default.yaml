@@ -1,9 +1,10 @@
 area:
-  min_lon: 4.883
-  min_lat: 52.366
-  max_lon: 4.895
-  max_lat: 52.374
+  min_lon: 4.88
+  min_lat: 52.36
+  max_lon: 4.92
+  max_lat: 52.38
 
 cache:
   output_dir: "data/outputs"
-  recompute_nodes: []
+  recompute_nodes:
+    - facade_grammars

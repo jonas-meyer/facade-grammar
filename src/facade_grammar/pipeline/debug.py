@@ -13,6 +13,7 @@ from facade_grammar.schemas.buildings import (
     FacadeLattice,
     FacadeMask,
 )
+from facade_grammar.schemas.grammar import InducedGrammar, SynthesizedFacade
 from facade_grammar.schemas.photos import PhotoMetadata
 from facade_grammar.viz.plots import (
     plot_area_map,
@@ -22,6 +23,7 @@ from facade_grammar.viz.plots import (
     plot_facade_lattice_contact_sheet,
     plot_facade_mask_contact_sheet,
 )
+from facade_grammar.viz.synthesis import plot_synthesized_facades_contact_sheet
 
 
 @cache(behavior="recompute")
@@ -102,4 +104,43 @@ def facade_lattice_contact_sheet(
         facade_lattices=facade_lattices,
         facade_masks=facade_masks,
         out_path=Path("data/debug/facade_lattice_contact_sheet.png"),
+    )
+
+
+@cache(behavior="recompute")
+@tag(stage="debug")
+def synthesized_facades_contact_sheet(
+    synthesized_facades: list[SynthesizedFacade],
+    induced_grammar: InducedGrammar,
+) -> Path:
+    return plot_synthesized_facades_contact_sheet(
+        synthesized_facades=synthesized_facades,
+        induced_grammar=induced_grammar,
+        out_path=Path("data/debug/synthesized_facades_contact_sheet.png"),
+    )
+
+
+@cache(behavior="recompute")
+@tag(stage="debug")
+def photogenic_facades_contact_sheet(
+    photogenic_facades: list[SynthesizedFacade],
+    induced_grammar: InducedGrammar,
+) -> Path:
+    return plot_synthesized_facades_contact_sheet(
+        synthesized_facades=photogenic_facades,
+        induced_grammar=induced_grammar,
+        out_path=Path("data/debug/photogenic_facades.png"),
+    )
+
+
+@cache(behavior="recompute")
+@tag(stage="debug")
+def archetype_facades_contact_sheet(
+    archetype_facades: list[SynthesizedFacade],
+    induced_grammar: InducedGrammar,
+) -> Path:
+    return plot_synthesized_facades_contact_sheet(
+        synthesized_facades=archetype_facades,
+        induced_grammar=induced_grammar,
+        out_path=Path("data/debug/archetype_facades.png"),
     )

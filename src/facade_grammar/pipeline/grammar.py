@@ -32,7 +32,7 @@ from facade_grammar.schemas.buildings import (
 def facade_grammars(
     facade_features: dict[str, FacadeFeatures],
     facade_masks: dict[str, FacadeMask],
-    raw_buildings: list[Building],
+    buildings_by_id: dict[str, Building],
     canal_facades: list[Facade],
     grammar: GrammarConfig,
 ) -> dict[str, FacadeGrammar]:
@@ -42,7 +42,6 @@ def facade_grammars(
     at blog-scale. BAG attributes and real-world facade dimensions are
     looked up per building_id and folded into the record.
     """
-    buildings_by_id = {b.building_id: b for b in raw_buildings}
     facades_by_id = {f.building_id: f for f in canal_facades}
     grammars: dict[str, FacadeGrammar] = {}
     for bid, ff in facade_features.items():
@@ -76,8 +75,12 @@ def _fit_grammar(
 
     win_x = _norm_centres_x(windows, fx0, fw)
     win_y = _norm_centres_y(windows, fy0, fh)
-    win_w = np.array([(i.bbox[2] - i.bbox[0]) / fw for i in windows])
-    win_h = np.array([(i.bbox[3] - i.bbox[1]) / fh for i in windows])
+    # Feature bboxes can escape the facade rectangle on bad SAM segmentations
+    # (e.g. a window detection spilling into the adjacent building). Clip
+    # normalised widths/heights to [0, 1] so the aggregated means respect the
+    # ``FacadeGrammar`` schema bounds without dropping the facade outright.
+    win_w = np.clip([(i.bbox[2] - i.bbox[0]) / fw for i in windows], 0.0, 1.0)
+    win_h = np.clip([(i.bbox[3] - i.bbox[1]) / fh for i in windows], 0.0, 1.0)
 
     window_row_y_centers = _histogram_peak_cluster_1d(
         win_y,

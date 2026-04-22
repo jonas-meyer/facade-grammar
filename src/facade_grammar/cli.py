@@ -20,12 +20,16 @@ from facade_grammar.config import AppConfig
 from facade_grammar.pipeline import (
     audit,
     debug,
+    families,
     grammar,
+    induction,
     ingestion,
     outputs,
+    quality,
     regularization,
     selection,
     spatial,
+    synthesis,
     vision,
 )
 
@@ -54,9 +58,13 @@ def main(
             spatial,
             selection,
             vision,
+            quality,
             audit,
             grammar,
             regularization,
+            induction,
+            families,
+            synthesis,
             debug,
             outputs,
         )
@@ -86,6 +94,11 @@ def main(
             "features_csv",
             "lattices_json",
             "audit_jsonl",
+            "induced_grammar_json",
+            "synthesized_grammar_json",
+            "synthesized_facades_contact_sheet",
+            "photogenic_facades_contact_sheet",
+            "archetype_facades_contact_sheet",
         ],
         inputs={
             "area_bbox": cfg.area,
@@ -95,6 +108,9 @@ def main(
             "selection": cfg.selection,
             "sam": cfg.sam,
             "grammar": cfg.grammar,
+            "induction": cfg.induction,
+            "synthesis": cfg.synthesis,
+            "quality": cfg.quality,
             "cache": cfg.cache,
         },
     )
@@ -108,6 +124,11 @@ def main(
     typer.echo(f"features_csv: {result['features_csv']}")
     typer.echo(f"lattices_json: {result['lattices_json']}")
     typer.echo(f"audit_jsonl: {result['audit_jsonl']}")
+    typer.echo(f"induced_grammar_json: {result['induced_grammar_json']}")
+    typer.echo(f"synthesized_grammar_json: {result['synthesized_grammar_json']}")
+    typer.echo(f"synthesized_facades_contact_sheet: {result['synthesized_facades_contact_sheet']}")
+    typer.echo(f"photogenic_facades_contact_sheet: {result['photogenic_facades_contact_sheet']}")
+    typer.echo(f"archetype_facades_contact_sheet: {result['archetype_facades_contact_sheet']}")
     typer.echo(f"facade_grammars: {len(result['facade_grammars'])} building(s)")
     for bid, g in result["facade_grammars"].items():
         year = g.bag_construction_year or "?"

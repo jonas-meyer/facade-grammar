@@ -14,12 +14,16 @@ from hamilton import driver
 from facade_grammar.pipeline import (
     audit,
     debug,
+    families,
     grammar,
+    induction,
     ingestion,
     outputs,
+    quality,
     regularization,
     selection,
     spatial,
+    synthesis,
     vision,
 )
 
@@ -32,9 +36,13 @@ def main() -> None:
             spatial,
             selection,
             vision,
+            quality,
             audit,
             grammar,
             regularization,
+            induction,
+            families,
+            synthesis,
             debug,
             outputs,
         )

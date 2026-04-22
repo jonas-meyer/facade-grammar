@@ -9,7 +9,6 @@ returns N aligned instance lists.
 import base64
 import io
 import logging
-import time
 from typing import NamedTuple
 
 import httpx
@@ -17,6 +16,13 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, TypeAdapter
+from tenacity import (
+    Retrying,
+    before_sleep_log,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 log = logging.getLogger(__name__)
 
@@ -67,38 +73,32 @@ def segment(
     prompts: list[SamPrompt],
     base_url: str,
     timeout_s: float,
-    retries: int = 0,
+    max_attempts: int = 1,
     retry_base_delay_s: float = 1.0,
 ) -> list[list[SamInstance]]:
     """POST one image with N prompts; return N aligned instance lists.
 
     Retries transport errors and 5xx with exponential backoff; 4xx (caller
-    bug) is not retried. ``retries=0`` disables retrying entirely.
+    bug) is not retried. ``max_attempts=1`` disables retrying entirely.
     """
     request = _PredictRequest(
         image_b64=base64.b64encode(image_bytes).decode("ascii"),
         prompts=[_PredictPrompt(text=p.text, boxes=p.boxes) for p in prompts],
     )
     url = f"{base_url.rstrip('/')}/predict"
-    for attempt in range(retries + 1):
-        try:
-            with httpx.Client(timeout=timeout_s) as client:
-                resp = client.post(url, json=request.model_dump(exclude_none=True))
-                resp.raise_for_status()
-                results = _RESULTS_ADAPTER.validate_python(resp.json()["results"])
+    retrying = Retrying(
+        stop=stop_after_attempt(max_attempts),
+        wait=wait_exponential(multiplier=retry_base_delay_s, exp_base=2),
+        retry=retry_if_exception(_is_retryable),
+        reraise=True,
+        before_sleep=before_sleep_log(log, logging.WARNING),
+    )
+    for attempt in retrying:
+        with attempt, httpx.Client(timeout=timeout_s) as client:
+            resp = client.post(url, json=request.model_dump(exclude_none=True))
+            resp.raise_for_status()
+            results = _RESULTS_ADAPTER.validate_python(resp.json()["results"])
             return [_decode_result(r) for r in results]
-        except httpx.HTTPError as exc:
-            if attempt >= retries or not _is_retryable(exc):
-                raise
-            delay = retry_base_delay_s * (2**attempt)
-            log.warning(
-                "sam-service request failed (attempt %d/%d: %s); retrying in %.1fs",
-                attempt + 1,
-                retries + 1,
-                exc,
-                delay,
-            )
-            time.sleep(delay)
     raise RuntimeError("unreachable")
 
 
@@ -113,7 +113,7 @@ def _decode_result(result: _PredictResult) -> list[SamInstance]:
     ]
 
 
-def _is_retryable(exc: httpx.HTTPError) -> bool:
+def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, httpx.TransportError):
         return True
     if isinstance(exc, httpx.HTTPStatusError):

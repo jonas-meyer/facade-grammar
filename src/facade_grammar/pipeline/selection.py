@@ -1,6 +1,7 @@
 """Photo-to-facade matching: hard filters, then across-canal preference + distance rank."""
 
 import math
+from operator import itemgetter
 
 import polars as pl
 from hamilton.function_modifiers import tag
@@ -109,20 +110,22 @@ def _top_k_photos(
     ranked = sorted(
         (
             (
-                not _crosses_water(LineString([rd, midpoint]), waterway_tree),
-                -photo.captured_at.year,
-                -int(photo.captured_at.month in selection.winter_months),
-                perpendicularity_deg(facade.normal_deg, midpoint, rd),
-                -(photo.quality_score if photo.quality_score is not None else 0.0),
-                edge.distance(Point(rd)),
+                (
+                    not _crosses_water(LineString([rd, midpoint]), waterway_tree),
+                    -photo.captured_at.year,
+                    -int(photo.captured_at.month in selection.winter_months),
+                    perpendicularity_deg(facade.normal_deg, midpoint, rd),
+                    -(photo.quality_score or 0.0),
+                    edge.distance(Point(rd)),
+                ),
                 photo,
             )
             for photo, rd in zip(photos, photos_rd, strict=True)
             if _passes_hard_filters(photo, rd, edge, midpoint, normal, facade.normal_deg, selection)
         ),
-        key=lambda t: (t[0], t[1], t[2], t[3], t[4], t[5]),
+        key=itemgetter(0),
     )
-    return [photo for *_, photo in ranked[: selection.top_k]]
+    return [photo for _, photo in ranked[: selection.top_k]]
 
 
 def _crosses_water(sight_line: LineString, waterway_tree: STRtree) -> bool:

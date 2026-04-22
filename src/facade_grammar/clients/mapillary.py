@@ -53,10 +53,13 @@ class _MapillaryPhoto(BaseModel):
     def to_photo_metadata(self) -> PhotoMetadata | None:
         if self.lon is None or self.lat is None:
             return None
+        # Mapillary's compass_angle can come back as 360.0 (equivalent to 0 for
+        # the [0, 360) convention); normalise so the PhotoMetadata ``lt=360``
+        # constraint is satisfied.
         bearing = (
             None
             if self.compass_angle is None or self.compass_angle < 0
-            else float(self.compass_angle)
+            else float(self.compass_angle) % 360.0
         )
         return PhotoMetadata(
             photo_id=self.id,
@@ -108,22 +111,20 @@ def fetch_photo_metadata(
     token: SecretStr,
 ) -> list[PhotoMetadata]:
     headers = {"Authorization": f"OAuth {token.get_secret_value()}"}
-    tiles = _tile_bbox(bbox_wgs84, grid=_TILE_GRID)
-
-    seen_ids: set[str] = set()
-    photos: list[PhotoMetadata] = []
+    photos: dict[str, PhotoMetadata] = {}
     with httpx.Client(timeout=60.0) as client:
-        for tile in tiles:
-            for item in _stream_tile(client, headers, tile, depth=0):
-                raw_id = item.get("id")
-                if not isinstance(raw_id, str) or raw_id in seen_ids:
-                    continue
-                photo = _MapillaryPhoto.model_validate(item).to_photo_metadata()
-                if photo is None:
-                    continue
-                seen_ids.add(photo.photo_id)
-                photos.append(photo)
-    return photos
+        items = itertools.chain.from_iterable(
+            _stream_tile(client, headers, tile, depth=0)
+            for tile in _tile_bbox(bbox_wgs84, grid=_TILE_GRID)
+        )
+        for item in items:
+            raw_id = item.get("id")
+            if not isinstance(raw_id, str) or raw_id in photos:
+                continue
+            photo = _MapillaryPhoto.model_validate(item).to_photo_metadata()
+            if photo is not None:
+                photos[photo.photo_id] = photo
+    return list(photos.values())
 
 
 def _tile_bbox(bbox: Bbox, *, grid: int) -> Iterator[Bbox]:

@@ -162,11 +162,12 @@ class SamConfig(BaseModel):
             "is unavoidable on Apple Silicon."
         ),
     )
-    http_retries: int = Field(
-        default=3,
+    http_max_attempts: int = Field(
+        default=4,
+        ge=1,
         description=(
-            "Retry transient sam-service failures (transport errors / 5xx) up to this "
-            "many times per request. 4xx responses are not retried."
+            "Max attempts per sam-service request (initial + retries). Retries fire on "
+            "transport errors and 5xx responses; 4xx is not retried."
         ),
     )
     http_retry_base_delay_s: float = Field(
@@ -341,6 +342,143 @@ class GrammarConfig(BaseModel):
     )
 
 
+class InductionConfig(BaseModel):
+    """Knobs for ``pipeline.induction`` — MDL-guided split-grammar induction."""
+
+    grammar_prior_weight: float = Field(
+        default=1.0,
+        description=(
+            "Martinović's `w`: multiplier on DL(G) (the rule-dictionary bits) "
+            "in the MDL objective. >1 prefers fewer/shorter rules; <1 prefers "
+            "tighter per-facade fit at the cost of more rules."
+        ),
+    )
+    min_rule_reuse: int = Field(
+        default=1,
+        description=(
+            "Reserved for a future pruning pass: drop rules used by fewer "
+            "than this many facades. Currently keeps all induced rules."
+        ),
+    )
+
+
+class QualityConfig(BaseModel):
+    """Post-SAM mask-quality filter applied before grammar induction.
+
+    Keeps the SAM node's cache intact: these knobs only affect the
+    ``facade_masks`` filter node downstream of ``chosen_work_for_facade``,
+    so changing them costs a cheap re-run of grammar + induction, not of
+    SAM inference.
+    """
+
+    min_mask_area_ratio: float = Field(
+        default=0.02,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Reject facades whose mask covers less than this fraction of the "
+            "reprojected view — catches 'nothing there' and 'building too far' "
+            "cases where SAM produced a near-empty segmentation."
+        ),
+    )
+    max_mask_area_ratio: float = Field(
+        default=0.80,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Reject facades whose mask covers more than this fraction — the "
+            "building is too close, so it fills the frame and the roofline + "
+            "ground edge are both cut off."
+        ),
+    )
+    reject_vertically_cropped: bool = Field(
+        default=True,
+        description=(
+            "Reject if the mask touches BOTH top and bottom edges of the view "
+            "(building is vertically cut off — we can see neither sky above "
+            "nor ground/water below)."
+        ),
+    )
+    reject_horizontally_cropped: bool = Field(
+        default=True,
+        description=(
+            "Reject if the mask touches BOTH left and right edges (building "
+            "extends past the FoV, mostly the 'too close' pattern)."
+        ),
+    )
+
+
+class SynthesisConfig(BaseModel):
+    """Knobs for ``pipeline.families`` + ``pipeline.synthesis``."""
+
+    family_depth: int = Field(
+        default=2,
+        ge=1,
+        description=(
+            "Recursion budget for the structural family key. depth=1 groups "
+            "rules by immediate child classes only (very coarse); depth=3 "
+            "distinguishes up to grandchildren. Higher = more specific "
+            "families, fewer collapses, fewer choice points at generation."
+        ),
+    )
+    family_min_members: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Reserved for pruning singleton families. Currently no pruning "
+            "applied; all families are kept regardless of member count."
+        ),
+    )
+    n_samples: int = Field(
+        default=12,
+        ge=1,
+        description=(
+            "Number of synthesised facades per run. 12 matches the 4x3 "
+            "contact-sheet grid used by other debug outputs."
+        ),
+    )
+    rng_seed: int = Field(
+        default=42,
+        description=(
+            "Master seed for sampling. Child seeds for each sample are "
+            "spawned via numpy.random.SeedSequence so adjacent samples are "
+            "properly decorrelated."
+        ),
+    )
+    max_depth: int = Field(
+        default=20,
+        ge=1,
+        description=(
+            "Safety cap on recursion depth while sampling a parse tree. "
+            "At this depth the sampler forces a production whose children "
+            "all route to terminal families, guaranteeing termination."
+        ),
+    )
+    min_production_weight: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Drop productions used fewer than this many times in the training "
+            "corpus before sampling. 1 keeps everything (the default — "
+            "Dirichlet smoothing handles noise). Higher values kill variety "
+            "that `dirichlet_concentration` would otherwise downweight "
+            "proportionally; typically only useful when smoothing is off "
+            "(alpha=0)."
+        ),
+    )
+    dirichlet_concentration: float = Field(
+        default=0.1,
+        ge=0.0,
+        description=(
+            "Dirichlet prior (alpha) on production probabilities. 0.0 = MLE "
+            "(identical to empirical-count sampling); small positive smooths "
+            "low-count productions upward without killing them outright. "
+            "Composes with min_production_weight: pruning drops obvious "
+            "singletons, smoothing floors what remains."
+        ),
+    )
+
+
 class AppConfig(BaseSettings):
     """Top-level configuration for the facade-grammar pipeline."""
 
@@ -360,6 +498,9 @@ class AppConfig(BaseSettings):
     selection: SelectionConfig = Field(default_factory=SelectionConfig)
     sam: SamConfig = Field(default_factory=SamConfig)
     grammar: GrammarConfig = Field(default_factory=GrammarConfig)
+    induction: InductionConfig = Field(default_factory=InductionConfig)
+    synthesis: SynthesisConfig = Field(default_factory=SynthesisConfig)
+    quality: QualityConfig = Field(default_factory=QualityConfig)
     mapillary_token: SecretStr
 
     @classmethod

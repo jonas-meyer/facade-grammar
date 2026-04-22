@@ -1,9 +1,11 @@
 """Mapillary photo metadata records."""
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import AwareDatetime, Field, HttpUrl
+
+from facade_grammar.schemas.base import FrozenModel
 
 
-class PhotoMetadata(BaseModel):
+class PhotoMetadata(FrozenModel):
     """Single Mapillary photo with camera pose.
 
     ``bearing_deg`` is ``None`` when Mapillary has no SfM-refined heading for
@@ -11,8 +13,6 @@ class PhotoMetadata(BaseModel):
     ``bearing_deg`` represents the forward direction of the image — the
     column at the horizontal centre of the equirectangular frame.
     """
-
-    model_config = ConfigDict(frozen=True)
 
     photo_id: str
     lon: float

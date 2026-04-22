@@ -90,7 +90,7 @@ def per_facade_photos(
 @tag(stage="vision")
 def chosen_work_for_facade(
     per_facade_photos: tuple[Facade, list[PhotoMetadata]],
-    raw_buildings: list[Building],
+    buildings_by_id: dict[str, Building],
     sam: SamConfig,
     mapillary_token: SecretStr,
 ) -> FacadeWork:
@@ -104,7 +104,7 @@ def chosen_work_for_facade(
     """
     facade, photos = per_facade_photos
     try:
-        building = _lookup_building(raw_buildings, facade.building_id)
+        building = buildings_by_id[facade.building_id]
         candidates = list(_evaluate_candidates(facade, building, photos, sam, mapillary_token))
         best = _pick_best(candidates, sam.max_occluder_ratio)
         if best is None:
@@ -182,13 +182,6 @@ def _features_from_winner(
     )
 
 
-def _lookup_building(buildings: list[Building], building_id: str) -> Building:
-    for b in buildings:
-        if b.building_id == building_id:
-            return b
-    raise ValueError(f"no Building record for facade {building_id}")
-
-
 @tag(stage="vision")
 def facade_works(chosen_work_for_facade: Collect[FacadeWork]) -> dict[str, FacadeWork]:
     """Collect every facade's outcome keyed by building_id (audit records for
@@ -197,7 +190,13 @@ def facade_works(chosen_work_for_facade: Collect[FacadeWork]) -> dict[str, Facad
 
 
 @tag(stage="vision")
-def facade_masks(facade_works: dict[str, FacadeWork]) -> dict[str, FacadeMask]:
+def raw_facade_masks(facade_works: dict[str, FacadeWork]) -> dict[str, FacadeMask]:
+    """All successful per-facade masks, before quality filtering.
+
+    The quality filter lives in ``pipeline.quality`` as a separate node so
+    its thresholds can be tuned without touching ``SamConfig`` (which would
+    invalidate the expensive SAM-cache on ``chosen_work_for_facade``).
+    """
     return {bid: w.mask for bid, w in facade_works.items() if w.mask is not None}
 
 
@@ -234,7 +233,7 @@ def _evaluate_candidates(
                 prompts=all_prompts,
                 base_url=str(cfg.service_url),
                 timeout_s=cfg.http_timeout_s,
-                retries=cfg.http_retries,
+                max_attempts=cfg.http_max_attempts,
                 retry_base_delay_s=cfg.http_retry_base_delay_s,
             )
         except httpx.HTTPError as exc:

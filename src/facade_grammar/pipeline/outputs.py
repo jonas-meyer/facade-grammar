@@ -9,6 +9,7 @@ would otherwise skip the write on a cache hit, leaving stale files on
 disk whenever an upstream node was invalidated via ``recompute_nodes``.
 """
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import get_args
@@ -27,9 +28,19 @@ from facade_grammar.schemas.buildings import (
     FacadeMask,
     FeatureClass,
 )
+from facade_grammar.schemas.grammar import (
+    GrammarFamilies,
+    InducedGrammar,
+    ParseNode,
+    SynthesizedFacade,
+)
 
 _GRAMMAR_LIST: TypeAdapter[list[FacadeGrammar]] = TypeAdapter(list[FacadeGrammar])
 _LATTICE_LIST: TypeAdapter[list[FacadeLattice]] = TypeAdapter(list[FacadeLattice])
+_INDUCED_GRAMMAR: TypeAdapter[InducedGrammar] = TypeAdapter(InducedGrammar)
+_PARSES: TypeAdapter[dict[str, ParseNode]] = TypeAdapter(dict[str, ParseNode])
+_FAMILIES: TypeAdapter[GrammarFamilies] = TypeAdapter(GrammarFamilies)
+_SYNTHESIZED: TypeAdapter[list[SynthesizedFacade]] = TypeAdapter(list[SynthesizedFacade])
 
 
 @hamilton_cache(behavior="recompute")
@@ -120,6 +131,42 @@ def lattices_json(
     out = cache.output_dir / "lattices.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(_LATTICE_LIST.dump_json(list(facade_lattices.values()), indent=2))
+    return out
+
+
+@hamilton_cache(behavior="recompute")
+@tag(stage="outputs")
+def induced_grammar_json(
+    induced_grammar: InducedGrammar,
+    facade_parses: dict[str, ParseNode],
+    cache: CacheConfig,
+) -> Path:
+    """One JSON: rules + facade_roots + mdl_bits + per-facade parse trees."""
+    out = cache.output_dir / "induced_grammar.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        **_INDUCED_GRAMMAR.dump_python(induced_grammar, mode="json"),
+        "parses": _PARSES.dump_python(facade_parses, mode="json"),
+    }
+    out.write_text(json.dumps(payload, indent=2))
+    return out
+
+
+@hamilton_cache(behavior="recompute")
+@tag(stage="outputs")
+def synthesized_grammar_json(
+    grammar_families: GrammarFamilies,
+    synthesized_facades: list[SynthesizedFacade],
+    cache: CacheConfig,
+) -> Path:
+    """Mined non-terminal families + sampled parse trees, one JSON file."""
+    out = cache.output_dir / "synthesized_grammar.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        **_FAMILIES.dump_python(grammar_families, mode="json"),
+        "samples": _SYNTHESIZED.dump_python(synthesized_facades, mode="json"),
+    }
+    out.write_text(json.dumps(payload, indent=2))
     return out
 
 

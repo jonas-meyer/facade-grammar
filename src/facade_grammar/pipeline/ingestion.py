@@ -29,6 +29,12 @@ def raw_buildings(area_bbox: Bbox) -> tuple[list[Building], dict[str, str]]:
     return data, {"source": "3dbag", "n": str(len(data)), "bbox": str(area_bbox)}
 
 
+@tag(stage="ingestion")
+def buildings_by_id(raw_buildings: list[Building]) -> dict[str, Building]:
+    """Id-keyed view of ``raw_buildings`` so per-facade nodes skip the linear scan."""
+    return {b.building_id: b for b in raw_buildings}
+
+
 @check_output(schema=OsmStreetsSchema.to_schema(), importance="fail")
 @dataloader()
 @tag(stage="ingestion", source="osm")

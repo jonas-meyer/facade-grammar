@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 import numpy as np
+import pytest
 from pydantic import HttpUrl
 
 from facade_grammar.clients.sam import SamInstance
@@ -52,62 +53,44 @@ def test_pick_best_empty_returns_none() -> None:
     assert _pick_best([], max_occluder_ratio=0.4) is None
 
 
-def test_pick_best_hard_rejects_occluded_then_picks_min_rank() -> None:
-    # Above threshold is filtered out; among survivors min rank wins
-    # even if another survivor has a lower occluder_ratio.
-    heavy = _candidate("heavy", rank=0, occluder_ratio=0.9)
-    clean_first = _candidate("first", rank=1, occluder_ratio=0.2)
-    clean_cleaner = _candidate("cleaner", rank=2, occluder_ratio=0.1)
-    best = _pick_best([heavy, clean_first, clean_cleaner], max_occluder_ratio=0.4)
-    assert best is not None and best.photo.photo_id == "first"
+@pytest.mark.parametrize(
+    "candidates,expected_id",
+    [
+        # Above-threshold filtered, min-rank wins among survivors even if
+        # another survivor has a lower ratio.
+        ([("heavy", 0, 0.9), ("first", 1, 0.2), ("cleaner", 2, 0.1)], "first"),
+        # Tie on ratio breaks on rank.
+        ([("early", 0, 0.2), ("late", 2, 0.2)], "early"),
+        # All above threshold — fall back to best-ranked rather than drop the facade.
+        ([("a", 0, 0.9), ("b", 1, 0.95)], "a"),
+    ],
+    ids=["rejects_occluded_picks_min_rank", "ties_break_on_rank", "falls_back_all_exceed"],
+)
+def test_pick_best(candidates, expected_id) -> None:
+    cands = [_candidate(pid, rank=r, occluder_ratio=o) for pid, r, o in candidates]
+    best = _pick_best(cands, max_occluder_ratio=0.4)
+    assert best is not None and best.photo.photo_id == expected_id
 
 
-def test_pick_best_ties_break_on_rank() -> None:
-    early = _candidate("early", rank=0, occluder_ratio=0.2)
-    late = _candidate("late", rank=2, occluder_ratio=0.2)
-    best = _pick_best([late, early], max_occluder_ratio=0.4)
-    assert best is not None and best.photo.photo_id == "early"
-
-
-def test_pick_best_falls_back_when_all_exceed_threshold() -> None:
-    # Rather than drop the facade, pick the best-ranked above-threshold.
-    a = _candidate("a", rank=0, occluder_ratio=0.9)
-    b = _candidate("b", rank=1, occluder_ratio=0.95)
-    best = _pick_best([a, b], max_occluder_ratio=0.4)
-    assert best is not None and best.photo.photo_id == "a"
-
-
-def test_occluder_bbox_ratio_no_overlap_is_zero() -> None:
-    # Facade bbox is the top half; occluder sits entirely below it.
-    facade_bbox = (0, 0, 4, 2)
+@pytest.mark.parametrize(
+    "facade_bbox,tree_rows,tree_cols,expected",
+    [
+        # Tree sits entirely below the top-half facade bbox.
+        ((0, 0, 4, 2), slice(2, None), slice(None), 0.0),
+        # Tree fills the whole left-half facade bbox.
+        ((0, 0, 2, 4), slice(None), slice(None, 2), 1.0),
+        # Tree covers half of the left-half facade bbox.
+        ((0, 0, 2, 4), slice(None, 2), slice(None, 2), 0.5),
+        # Ring-shaped facade: tree fills the hole — zero pixelwise overlap but
+        # the bbox-based metric still sees 4/16 covered.
+        ((0, 0, 4, 4), slice(1, 3), slice(1, 3), 0.25),
+    ],
+    ids=["no_overlap", "full_overlap", "half_overlap", "tree_in_hole"],
+)
+def test_occluder_bbox_ratio(facade_bbox, tree_rows, tree_cols, expected) -> None:
     tree = np.zeros((4, 4), dtype=bool)
-    tree[2:] = True
-    assert _occluder_bbox_ratio(tree, facade_bbox) == 0.0
-
-
-def test_occluder_bbox_ratio_full_overlap_is_one() -> None:
-    facade_bbox = (0, 0, 2, 4)
-    tree = np.zeros((4, 4), dtype=bool)
-    tree[:, :2] = True
-    assert _occluder_bbox_ratio(tree, facade_bbox) == 1.0
-
-
-def test_occluder_bbox_ratio_half_overlap() -> None:
-    # Facade bbox = left half (8 px). Tree covers top-left 4 px inside it.
-    facade_bbox = (0, 0, 2, 4)
-    tree = np.zeros((4, 4), dtype=bool)
-    tree[:2, :2] = True
-    assert _occluder_bbox_ratio(tree, facade_bbox) == 0.5
-
-
-def test_occluder_bbox_ratio_catches_tree_in_facade_hole() -> None:
-    # A ring-shaped facade mask has the full frame as its bbox; a tree that
-    # fills the hole has zero pixelwise overlap with the ring but the bbox
-    # metric sees 4/16 of the bbox covered.
-    facade_bbox = (0, 0, 4, 4)
-    tree = np.zeros((4, 4), dtype=bool)
-    tree[1:3, 1:3] = True
-    assert _occluder_bbox_ratio(tree, facade_bbox) == 0.25
+    tree[tree_rows, tree_cols] = True
+    assert _occluder_bbox_ratio(tree, facade_bbox) == expected
 
 
 def _inst(score: float, box: tuple[float, float, float, float]) -> SamInstance:

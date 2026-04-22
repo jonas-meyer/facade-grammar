@@ -101,28 +101,46 @@ def _build_lattice(g: FacadeGrammar, ff: FacadeFeatures, fm: FacadeMask) -> Faca
     )
 
 
+_MIN_BOUNDARY_GAP = 0.02
+
+
 def _row_boundaries(g: FacadeGrammar) -> list[float]:
-    inner = sorted(g.floor_split_ys)
-    bounds: list[float] = [0.0]
+    """Fine-grained rows: gable + floor splits + each window row's top/bottom."""
+    half_h = g.window_h_mean / 2
+    points: set[float] = {0.0, 1.0}
     if g.gable_y_end is not None and 0.0 < g.gable_y_end < 1.0:
-        bounds.append(g.gable_y_end)
-    bounds.extend(inner)
-    bounds.append(1.0)
-    # Deduplicate + enforce strict monotonicity — floor_split_ys may equal the
-    # gable boundary on short facades.
-    out: list[float] = []
-    for b in bounds:
-        if not out or b > out[-1] + 1e-9:
-            out.append(b)
-    return out
+        points.add(g.gable_y_end)
+    points.update(g.floor_split_ys)
+    for cy in g.window_row_y_centers:
+        points.add(max(0.0, cy - half_h))
+        points.add(min(1.0, cy + half_h))
+    return _dedupe_close(sorted(points))
 
 
 def _col_boundaries(g: FacadeGrammar) -> list[float]:
+    """Fine-grained columns: window left/right edges around each column centre."""
     centers = sorted(g.column_x_centers)
     if not centers:
         return [0.0, 1.0]
-    midpoints = [(centers[i] + centers[i + 1]) / 2 for i in range(len(centers) - 1)]
-    return [0.0, *midpoints, 1.0]
+    half_w = g.window_w_mean / 2
+    points: set[float] = {0.0, 1.0}
+    for cx in centers:
+        points.add(max(0.0, cx - half_w))
+        points.add(min(1.0, cx + half_w))
+    return _dedupe_close(sorted(points))
+
+
+def _dedupe_close(points: list[float]) -> list[float]:
+    """Merge boundaries that fall within ``_MIN_BOUNDARY_GAP`` of each other."""
+    if not points:
+        return [0.0, 1.0]
+    out = [points[0]]
+    for p in points[1:]:
+        if p > out[-1] + _MIN_BOUNDARY_GAP:
+            out.append(p)
+    if out[-1] != 1.0:
+        out[-1] = 1.0  # force the last boundary to exactly 1 so the final cell closes
+    return out
 
 
 def _bin_index(value: float, boundaries: list[float]) -> int:

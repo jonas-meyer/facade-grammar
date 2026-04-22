@@ -3,25 +3,20 @@
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, Field, model_validator
+
+from facade_grammar.schemas.base import FrozenModel
 
 FacadeClass = Literal["canal", "street", "other"]
 
-# Frozen domain records: mutation would silently corrupt Hamilton's input
-# fingerprints (used for cache keys) since Hamilton trusts the object
-# identity after initial validation.
-_FROZEN = ConfigDict(frozen=True)
 
-
-class Building(BaseModel):
+class Building(FrozenModel):
     """A single building from 3D BAG with its ground-plane footprint.
 
     ``height_m`` is roof ridge above ground; ``eaves_height_m`` is the 70th-
     percentile roof point above ground (close to the eaves). Their difference
     is the gable prominence — a direct roof-shape signal independent of SAM.
     """
-
-    model_config = _FROZEN
 
     building_id: str
     footprint: list[tuple[float, float]]
@@ -34,15 +29,13 @@ class Building(BaseModel):
     footprint_area_m2: float | None = Field(default=None, ge=0)
 
 
-class Facade(BaseModel):
+class Facade(FrozenModel):
     """One edge of a building footprint, classified by what it faces.
 
     ``normal_deg`` is the compass azimuth of the outward-pointing facade normal
     (0 = north, 90 = east). Edge coords are in WGS84 to match ``Building.footprint``;
     the classifier computes geometry internally in EPSG:28992 and reprojects back.
     """
-
-    model_config = _FROZEN
 
     building_id: str
     edge_start: tuple[float, float]
@@ -59,10 +52,8 @@ class Facade(BaseModel):
         )
 
 
-class FacadeMask(BaseModel):
+class FacadeMask(FrozenModel):
     """SAM 3 segmentation result attached to the chosen photo for a canal facade."""
-
-    model_config = _FROZEN
 
     building_id: str
     photo_id: str
@@ -89,18 +80,14 @@ FEATURE_CLASS_PROMPT: dict[FeatureClass, str] = {
 }
 
 
-class FeatureInstance(BaseModel):
-    model_config = _FROZEN
-
+class FeatureInstance(FrozenModel):
     cls: FeatureClass
     score: float = Field(ge=0, le=1)
     bbox: tuple[int, int, int, int]
 
 
-class FacadeFeatures(BaseModel):
+class FacadeFeatures(FrozenModel):
     """Per-class SAM 3 segmentation results for sub-features of a chosen facade."""
-
-    model_config = _FROZEN
 
     building_id: str
     photo_id: str
@@ -109,15 +96,13 @@ class FacadeFeatures(BaseModel):
     instances: list[FeatureInstance]
 
 
-class LatticeCell(BaseModel):
+class LatticeCell(FrozenModel):
     """One cell of a regularised facade lattice.
 
     ``cls`` is the dominant feature class whose bbox centre landed in this
     cell, or ``"wall"`` if nothing did. ``source_bbox_norm`` is that winning
     detection's bbox in facade-normalised coords, or None for wall-fills.
     """
-
-    model_config = _FROZEN
 
     row: int = Field(ge=0)
     col: int = Field(ge=0)
@@ -126,7 +111,7 @@ class LatticeCell(BaseModel):
     source_bbox_norm: tuple[float, float, float, float] | None = None
 
 
-class FacadeLattice(BaseModel):
+class FacadeLattice(FrozenModel):
     """Regularised rectangle-grid representation of one facade.
 
     Snaps the per-facade feature detections onto the row/column structure
@@ -137,8 +122,6 @@ class FacadeLattice(BaseModel):
     Coordinates are normalised to the facade bbox (0 = top/left, 1 =
     bottom/right).
     """
-
-    model_config = _FROZEN
 
     building_id: str
     n_rows: int = Field(ge=1)
@@ -170,7 +153,7 @@ class FacadeLattice(BaseModel):
 AuditStatus = Literal["ok", "no_candidates", "error"]
 
 
-class AuditRecord(BaseModel):
+class AuditRecord(FrozenModel):
     """Per-facade outcome record, emitted by every parallel worker.
 
     One of these rides alongside every ``FacadeWork`` so the full audit log
@@ -185,8 +168,6 @@ class AuditRecord(BaseModel):
     outcomes or when the winner's photo has been pruned from metadata.
     """
 
-    model_config = _FROZEN
-
     building_id: str
     status: AuditStatus
     photo_id: str | None = None
@@ -196,7 +177,7 @@ class AuditRecord(BaseModel):
     occluder_ratio: float | None = None
 
 
-class FacadeWork(BaseModel):
+class FacadeWork(FrozenModel):
     """One parallel worker's output: audit record + (on success) facade mask
     and its feature instances.
 
@@ -210,14 +191,12 @@ class FacadeWork(BaseModel):
     ``features`` are only populated when ``audit.status == "ok"``.
     """
 
-    model_config = _FROZEN
-
     audit: AuditRecord
     mask: FacadeMask | None = None
     features: FacadeFeatures | None = None
 
 
-class FacadeGrammar(BaseModel):
+class FacadeGrammar(FrozenModel):
     """Parametric split-grammar fit to one facade's detected features.
 
     All y / x / width / height values are normalised to the facade bbox —
@@ -228,8 +207,6 @@ class FacadeGrammar(BaseModel):
     Floor/column counts come from histogram-peak 1D clustering of window bbox
     centres; the gable region is the strip above the topmost floor band.
     """
-
-    model_config = _FROZEN
 
     building_id: str
     photo_id: str

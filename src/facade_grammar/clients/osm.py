@@ -5,6 +5,7 @@ osm_id) so Hamilton's cache fingerprint is deterministic across runs. The
 osmnx GeoDataFrame never escapes these functions.
 """
 
+import geopandas as gpd
 import osmnx as ox
 import polars as pl
 
@@ -42,19 +43,12 @@ def fetch_waterways(bbox_wgs84: Bbox) -> pl.DataFrame:
                 "geometry_wkt": pl.String,
             }
         )
-    if "waterway" in subset.columns:
-        kinds = subset["waterway"].fillna("water").astype(str).tolist()
-    else:
-        kinds = ["water"] * len(subset)
-    if "name" in subset.columns:
-        names = ["" if n is None else str(n) for n in subset["name"].fillna("").tolist()]
-    else:
-        names = [""] * len(subset)
     return pl.DataFrame(
         {
             "osm_id": [str(idx) for idx in subset.index.get_level_values("id")],
-            "waterway": kinds,
-            "name": names,
+            # ``natural=water`` polygons have NaN in the waterway column.
+            "waterway": subset["waterway"].fillna("water").astype(str).tolist(),
+            "name": _names(subset),
             "geometry_wkt": subset.geometry.to_wkt().tolist(),
         }
     ).sort("osm_id")
@@ -62,18 +56,19 @@ def fetch_waterways(bbox_wgs84: Bbox) -> pl.DataFrame:
 
 def _fetch_lines(bbox_wgs84: Bbox, *, tag: str) -> pl.DataFrame:
     gdf = ox.features.features_from_bbox(bbox=bbox_wgs84, tags={tag: True})
-    keep_cols = [c for c in (tag, "name") if c in gdf.columns] + ["geometry"]
-    lines = gdf.loc[gdf.geometry.geom_type.isin(_LINE_TYPES), keep_cols]
-    names = (
-        ["" if n is None else str(n) for n in lines["name"].tolist()]
-        if "name" in lines.columns
-        else [""] * len(lines)
-    )
+    lines = gdf[gdf.geometry.geom_type.isin(_LINE_TYPES)]
     return pl.DataFrame(
         {
             "osm_id": [str(idx) for idx in lines.index.get_level_values("id")],
             tag: lines[tag].astype(str).tolist(),
-            "name": names,
+            "name": _names(lines),
             "geometry_wkt": lines.geometry.to_wkt().tolist(),
         }
     ).sort("osm_id")
+
+
+def _names(df: gpd.GeoDataFrame) -> list[str]:
+    """osmnx omits the ``name`` column when no feature in the bbox has it."""
+    if "name" not in df.columns:
+        return [""] * len(df)
+    return df["name"].fillna("").astype(str).tolist()
